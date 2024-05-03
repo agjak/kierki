@@ -1,6 +1,6 @@
 # kierki
 Celem zadania jest zaimplementowanie serwera i klienta gry w kierki. Serwer przeprowadza grę. Klienty reprezentują graczy.
-Zasady gry
+## Zasady gry
 
 W kierki gra czterech graczy standardową 52-kartową talią. Gracze siedzą przy stole na miejscach N (ang. north), E (ang. east), S (ang south), W (ang. west). Rozgrywka składa się z rozdań. W każdym rozdaniu każdy z graczy otrzymuje na początku po 13 kart. Gracz zna tylko swoje karty. Gra składa się z 13 lew. W pierwszej lewie wybrany gracz wychodzi, czyli rozpoczyna rozdanie, kładąc wybraną swoją kartę na stół. Po czym pozostali gracze w kolejności ruchu wskazówek zegara dokładają po jednej swojej karcie. Istnieje obowiązek dokładania kart do koloru. Jeśli gracz nie ma karty w wymaganym kolorze, może położyć kartę w dowolnym innym kolorze. Nie ma obowiązku przebijania kartą starszą. Gracz, który wyłożył najstarszą kartę w kolorze karty położonej przez gracza wychodzącego, bierze lewę i wychodzi jako pierwszy w następnej lewie. Obowiązuje standardowe starszeństwo kart (od najsłabszej): 2, 3, 4, …, 9, 10, walet, dama, król, as.
 
@@ -15,7 +15,7 @@ W grze chodzi o to, żeby brać jak najmniej kart. Za branie kart otrzymuje się
     rozbójnik, punkty dostaje się za wszystko wymienione powyżej.
 
 Rozdania nie trzeba rozgrywać do końca – można je przerwać, jeśli już wiadomo, że wszystkie punkty zostały rozdysponowane.
-Parametry wywołania serwera
+## Parametry wywołania serwera
 
 Parametry wywołania serwera mogą być podawane w dowolnej kolejności. Jeśli parametr został podany więcej niż raz, to obowiązuje jego pierwsze lub ostatnie wystąpienie na liście parametrów.
 
@@ -30,7 +30,7 @@ Określa nazwę pliku zawierającego definicję rozgrywki. Parametr jest obowią
 -t <timeout>
 
 Określa maksymalny czas w sekundach oczekiwania serwera. Jest to liczba dodatnia. Parametr jest opcjonalny. Jeśli nie podano tego parametru, czas ten wynosi 5 sekund.
-Parametry wywołania klienta
+## Parametry wywołania klienta
 
 Parametry wywołania klienta mogą być podawane w dowolnej kolejności. Jeśli parametr został podany więcej niż raz lub podano sprzeczne parametry, to obowiązuje pierwsze lub ostatnie wystąpienie takiego parametru na liście parametrów.
 
@@ -62,7 +62,7 @@ Określa miejsce, które klient chce zająć przy stole. Parametr jest obowiązk
 -a
 
 Parametr jest opcjonalny. Jeśli jest podany, to klient jest automatycznym graczem. Jeśli nie jest podany, to klient jest pośrednikiem między serwerem a graczem-użytkownikiem.
-Protokół komunikacyjny
+## Protokół komunikacyjny
 
 Serwer i klient komunikują się za pomocą TCP. Komunikaty są napisami ASCII zakończonymi sekwencją \r\n. Oprócz tej sekwencji w komunikatach nie ma innych białych znaków. Komunikaty nie zawierają terminalnego zera. Miejsce przy stole koduje się literą N, E, S lub W. Typ rozdania koduje się cyfrą od 1 do 7. Numer lewy koduje się liczbą od 1 do 13 zapisaną przy podstawie 10 bez zer wiodących. Przy kodowaniu kart najpierw podaje się wartość karty:
 
@@ -114,7 +114,7 @@ Klient ignoruje błędne komunikaty od serwera.
 Po zakończeniu rozgrywki serwer rozłącza wszystkie klienty i kończy działanie. Po rozłączeniu się serwera klient kończy działanie.
 
 Jeśli klient rozłączy się w trakcie rozgrywki, to serwer zawiesza rozgrywkę w oczekiwaniu na podłączenie się klienta na puste miejsce przy stole. Po podłączeniu się klienta serwer przekazuje mu stan aktualnego rozdania. Za pomocą komunikatu DEAL przekazuje karty, które klient dostał w tym rozdaniu. Za pomocą komunikatów TAKEN przekazuje dotychczas rozegrane lewy. Następnie serwer wznawia rozgrywkę i wymianę komunikatów TRICK.
-Wymagania funkcjonalne
+## Wymagania funkcjonalne
 
 Programy powinny dokładnie sprawdzać poprawność parametrów wywołania. Programy powinny wypisywać zrozumiałe komunikaty o błędach na standardowe wyjście diagnostyczne.
 
@@ -125,7 +125,7 @@ W kliencie należy zaimplementować jakąś heurystyczną strategię gry.
 Serwer oraz klient działający jako gracz automatyczny wypisują na standardowe wyjście raport z rozgrywki.
 
 Programy kończą się kodem 0, jeśli rozgrywka przebiegła do końca, a w przeciwnym przypadku kodem 1.
-Format pliku definiującego rozgrywkę
+## Format pliku definiującego rozgrywkę
 
 Plik o nazwie podanej serwerowi zawiera tekstowy opis rozgrywki. Opisane są w nim po kolei rozdania do rozegrania. Opis każdego rozdania składa się z pięciu linii opisujących typ rozdania, klienta wychodzącego jako pierwszy w rozdaniu i karty rozdawane poszczególnym klientom:
 
@@ -136,7 +136,7 @@ Plik o nazwie podanej serwerowi zawiera tekstowy opis rozgrywki. Opisane są w n
 <lista kart klienta W>\n
 
 Wolno założyć, że zawartość tego pliku jest poprawna.
-Format raportu z rozgrywki
+## Format raportu z rozgrywki
 
 Raport z rozgrywki zawiera po kolei wszystkie wysłane i odebrane komunikaty (również te błędne). Komunikat poprzedza się, podanymi w nawiasach kwadratowych, adresem IP i numerem portu nadawcy, adresem IP i numerem portu odbiorcy oraz czasem odebrania lub wysłania.
 
@@ -145,7 +145,7 @@ Na przykład, jeśli serwer 11.22.33.44 na porcie 1234 dostał komunikat IAMN\r\
 [44.44.44.44:4321,11.22.33.44:1234,2024-04-25T18:21:00.000] IAMN\r\n
 [11.22.33.44:1234,44.44.44.44:4321,2024-04-25T18:21:00.010] BUSYNW\r\n
 
-Komunikacja klienta z użytkownikiem
+## Komunikacja klienta z użytkownikiem
 
 Klient działający jako pośrednik udostępnia użytkownikowi interfejs tekstowy. Interfejs użytkownika powinien być intuicyjny. Klient wypisuje na standardowe wyjście informacje dla użytkownika i prośby od serwera o położenie karty. Klient czyta ze standardowego wejścia decyzje i polecenia użytkownika, na przykład polecenie wyświetlenia kart na ręce i wziętych lew. Klient w każdej chwili powinien móc spełnić polecenie użytkownika. Komunikacja z serwerem nie może blokować interfejsu użytkownika.
 
@@ -187,7 +187,7 @@ W przypadku komunikatu TRICK użytkownik wybiera kartę do dołożenia, wpisują
     tricks – wyświetlenie listy lew wziętych w ostatniej rozgrywce w kolejności wzięcia – każda lewa to lista kart w osobnej linii.
 
 Wszystkie listy w komunikatach dla użytkownika są wypisywane rozdzielone przecinkami i spacjami.
-Wymagania formalne
+## Wymagania formalne
 
 Można oddać tylko implementację serwera lub tylko klienta, albo obu.
 
@@ -196,7 +196,7 @@ Programy mają być napisane w języku C lub C++ z wykorzystaniem interfejsu gni
 Należy dostarczyć plik Makefile lub makefile. Polecenie make powinno tworzyć programy kierki-serwer i kierki-klient. Wśród parametrów kompilatora należy użyć -Wall, -Wextra i -O2, zalecamy korzystanie ze standardu -std=gnu17 lub -std=c++20 (w zakresie wspieranym przez kompilator w LK). Polecenie make clean powinno usuwać wszystkie pliki powstałe podczas kompilowania.
 
 Jako rozwiązanie należy dostarczyć archiwum ab123456.tgz stworzone parą programów tar i gzip, zawierające pliki źródłowe oraz plik makefile lub Makefile, gdzie ab123456 to standardowy login osoby oddającej rozwiązanie, używany na maszynach wydziału, wg schematu: inicjały, nr indeksu. Nie wolno umieszczać w archiwum plików zbędnych, binarnych ani pośrednich powstających podczas kompilowania.
-Ocena rozwiązania
+## Ocena rozwiązania
 
 Za serwer: 12 pkt
 
