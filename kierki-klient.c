@@ -14,10 +14,12 @@
 void load_client_arguments(int argc, char *argv[], uint16_t *port, char const **host, bool *is_IPv4, bool *is_IPv6, bool *is_automatic, char *wanted_place, bool *port_declared);
 int connect_to_server(struct sockaddr_in *server_address);
 int send_IAM(int server_fd, char wanted_place);
-int receive_BUSY_or_DEAL(int server_fd, hand *current_hand, bool is_automatic);
+int receive_BUSY_or_DEAL(int server_fd, hand *current_hand, bool is_automatic, int *deal_type);
 int print_out_busy_message(char *buffer);
 int load_starting_hand(char *buffer, hand* current_hand);
-
+int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int *current_round, bool is_automatic, int deal_type, bool *is_taken, char place_at_table);
+int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int *current_round, bool is_automatic, int deal_type, char place_at_table);
+int load_contents_of_TRICK(char *buffer, trick *current_trick, bool is_automatic);
 
 int main(int argc, char *argv[]) {
 
@@ -37,20 +39,28 @@ int main(int argc, char *argv[]) {
     
     int deal_type = 0;
     int current_points = 0;
+    int current_round = 0;
 
     hand *current_hand = malloc(sizeof(hand));
 
-    int busy_or_deal_result = receive_BUSY_or_DEAL(server_fd, current_hand, is_automatic);
+    int busy_or_deal_result = receive_BUSY_or_DEAL(server_fd, current_hand, is_automatic, &deal_type);
     if(busy_or_deal_result<0)
     {
         return busy_or_deal_result;
     }
 
+    trick *current_trick = malloc(sizeof(trick));
 
-    while(not_first_TRICK)
+    bool is_taken = true;
+    while(is_taken)
     {
-        TAKEN
+        int taken_or_trick_result = receive_TAKEN_or_TRICK(server_fd, current_hand, current_trick, &current_points, &current_round, is_automatic, deal_type, &is_taken, wanted_place);
+        if(taken_or_trick_result<0)
+        {
+            return taken_or_trick_result;
+        }
     }
+    respond_to_TRICK(server_fd, current_hand, is_automatic, &current_points, &current_round, deal_type);
     
     return 0;
 
@@ -146,7 +156,7 @@ int send_IAM(int server_fd, char wanted_place)
 // -2: received BUSY
 // -1: error
 // 0: received DEAL
-int receive_BUSY_or_DEAL(int server_fd, hand *current_hand, bool is_automatic)
+int receive_BUSY_or_DEAL(int server_fd, hand *current_hand, bool is_automatic, int *deal_type)
 {
     char *buffer = malloc(40*sizeof(char));
     if(readn_message(server_fd, buffer, 40)==-1)
@@ -164,12 +174,25 @@ int receive_BUSY_or_DEAL(int server_fd, hand *current_hand, bool is_automatic)
     }
     else if(buffer[0] == 'D' && buffer[1] == 'E' && buffer[2] == 'A' && buffer[3] == 'L')
     {
+        if(buffer[4]>='1' && buffer[4]<='7') {
+            *deal_type = buffer[4]-'0';
+        }
+        else {
+            error("Wrong contents of DEAL message. Message content : %s", buffer);
+            return -1;
+        }
+
+        if(!(buffer[5] == 'N' || buffer[5] == 'E' || buffer[5] == 'S' || buffer[5] == 'W')){
+            error("Wrong contents of DEAL message. Message content : %s", buffer);
+            return -1;
+        }
+
         if(load_starting_hand(buffer, current_hand)==-1)
             return -1;
     }
     else
     {
-        error("Unrecognised type of message");
+        error("Unrecognised type of message, expected BUSY or DEAL. Message content : %s", buffer);
         return -1;
     }
     return 0;
@@ -179,7 +202,7 @@ int print_out_busy_message(char *buffer)
 {
     char* busy_list= malloc(sizeof(char)*10);
     int busy_list_current_place = 0;
-    int buffer_place = 5;
+    int buffer_place = 4;
 
     bool has_north = false;
     bool has_west = false;
@@ -211,7 +234,7 @@ int print_out_busy_message(char *buffer)
         }
         else
         {
-            error("Wrong contents of the BUSY message.");
+            error("Wrong contents of the BUSY message. Message content : %s", buffer);
             return -1;
         }
 
@@ -234,7 +257,7 @@ int print_out_busy_message(char *buffer)
 int load_starting_hand(char *buffer, hand* current_hand)
 {
     int currently_loading_card = 0;
-    int buffer_place = 5;
+    int buffer_place = 6;
     while(buffer[buffer_place]!='\n' && buffer[buffer_place]!='\r')
     {
         if(buffer[buffer_place]>='2' && buffer[buffer_place]<='9')
@@ -269,7 +292,7 @@ int load_starting_hand(char *buffer, hand* current_hand)
         }
         else
         {
-            error("Wrong contents of DEAL message");
+            error("Wrong contents of DEAL message. Message content : %s", buffer);
             return -1;
         }
 
@@ -279,7 +302,7 @@ int load_starting_hand(char *buffer, hand* current_hand)
         }
         else 
         {
-            error("Wrong contents of DEAL message");
+            error("Wrong contents of DEAL message. Message content : %s", buffer);
             return -1;
         }
 
@@ -287,4 +310,79 @@ int load_starting_hand(char *buffer, hand* current_hand)
         currently_loading_card++;
     }
     return 0;
+}
+
+int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int *current_round, bool is_automatic, int deal_type, bool *is_taken, char place_at_table)
+{
+    char *buffer = malloc(25*sizeof(char));
+    if(readn_message(server_fd, buffer, 25)==-1)
+        return -1;
+
+    if(buffer[0] == 'T' && buffer[1] == 'A' && buffer[2] == 'K' && buffer[3] == 'E' && buffer[4] == 'N')
+    {
+        *is_taken = true;
+        int result = load_contents_of_TAKEN(buffer, current_hand, current_points, current_round, is_automatic, deal_type, place_at_table);
+        free(buffer);
+        return result;
+    }
+    else if(buffer[0] == 'T' && buffer[1] == 'R' && buffer[2] == 'I' && buffer[3] == 'C' && buffer[4] == 'K')
+    {
+        *is_taken = false;
+        int result = load_contents_of_TRICK(buffer, current_trick, is_automatic);
+        free(buffer);
+        return result;
+    }
+    else
+    {
+        error("Unrecognised type of message, expected TAKEN or TRICK. Message content : %s", buffer);
+        return -1;
+    }
+}
+
+int receive_TAKEN(int server_fd, hand *current_hand, int *current_points, int *current_round, bool is_automatic, int deal_type, char place_at_table)
+{
+    char *buffer = malloc(25*sizeof(char));
+    if(readn_message(server_fd, buffer, 25)==-1)
+        return -1;
+
+    if(buffer[0] == 'T' && buffer[1] == 'A' && buffer[2] == 'K' && buffer[3] == 'E' && buffer[4] == 'N')
+    {
+        *is_taken = true;
+        return load_contents_of_TAKEN(buffer, current_hand, current_points, current_round, is_automatic, deal_type, place_at_table);
+    }
+    else
+    {
+        error("Unrecognised type of message, expected TAKEN. Message content : %s", buffer);
+        return -1;
+    }
+}
+
+int receive_TRICK(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int *current_round, bool is_automatic, int deal_type, bool *is_taken, char place_at_table)
+{
+    char *buffer = malloc(25*sizeof(char));
+    if(readn_message(server_fd, buffer, 25)==-1)
+        return -1;
+
+    if(buffer[0] == 'T' && buffer[1] == 'R' && buffer[2] == 'I' && buffer[3] == 'C' && buffer[4] == 'K')
+    {
+        *is_taken = false;
+        int result = load_contents_of_TRICK(buffer, current_trick, is_automatic);
+        free(buffer);
+        return result;
+    }
+    else
+    {
+        error("Unrecognised type of message, expected TRICK. Message content : %s", buffer);
+        return -1;
+    }
+}
+
+int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int *current_round, bool is_automatic, int deal_type, char place_at_table)
+{
+
+}
+
+int load_contents_of_TRICK(char *buffer, trick *current_trick, bool is_automatic)
+{
+
 }

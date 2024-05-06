@@ -170,6 +170,7 @@ int readn_message(int client_fd, void* result, size_t max_size)
         if(result[current_location] == '\n')
         {
             end_of_message = true;
+            result[current_location+1] = '\0';
         }
         if(current_location==max_size-1)
         {

@@ -18,3 +18,8 @@ typedef struct {
 typedef struct {
     card cards[13];
 } hand;
+
+typedef struct {
+    card cards[3];
+    int amount;
+} trick;
