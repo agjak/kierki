@@ -17,9 +17,14 @@ int send_IAM(int server_fd, char wanted_place);
 int receive_BUSY_or_DEAL(int server_fd, hand *current_hand, bool is_automatic, int *deal_type);
 int print_out_busy_message(char *buffer);
 int load_starting_hand(char *buffer, hand* current_hand);
-int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int *current_round, bool is_automatic, int deal_type, bool *is_taken, char place_at_table);
-int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int *current_round, bool is_automatic, int deal_type, char place_at_table);
-int load_contents_of_TRICK(char *buffer, trick *current_trick, bool is_automatic);
+int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int current_round, bool is_automatic, int deal_type, bool *is_taken, char place_at_table);
+int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int current_round, bool is_automatic, int deal_type, char place_at_table);
+int load_round_number_TAKEN_or_TRICK(char *buffer, int current_round, int *buffer_place);
+int load_card_list_TAKEN(char *buffer, hand *current_hand, int *buffer_place, card *cards_taken);
+int load_client_taking_and_count_points_TAKEN(char *buffer, int current_round, int deal_type, int *current_points, char place_at_table, int *buffer_place, card *cards_taken);
+int load_contents_of_TRICK(char *buffer, trick *current_trick, bool is_automatic, int current_round);
+int load_card_from_this_buffer_place(char *buffer, int *buffer_place, card *loaded_card);
+int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int *current_points, int current_round, int deal_type);
 
 int main(int argc, char *argv[]) {
 
@@ -54,13 +59,14 @@ int main(int argc, char *argv[]) {
     bool is_taken = true;
     while(is_taken)
     {
-        int taken_or_trick_result = receive_TAKEN_or_TRICK(server_fd, current_hand, current_trick, &current_points, &current_round, is_automatic, deal_type, &is_taken, wanted_place);
+        current_round++;
+        int taken_or_trick_result = receive_TAKEN_or_TRICK(server_fd, current_hand, current_trick, &current_points, current_round, is_automatic, deal_type, &is_taken, wanted_place);
         if(taken_or_trick_result<0)
         {
             return taken_or_trick_result;
         }
     }
-    respond_to_TRICK(server_fd, current_hand, is_automatic, &current_points, &current_round, deal_type);
+    respond_to_TRICK(server_fd, current_hand, is_automatic, &current_points, current_round, deal_type);
     
     return 0;
 
@@ -142,11 +148,11 @@ int connect_to_server(struct sockaddr_in *server_address)
 
 int send_IAM(int server_fd, char wanted_place)
 {
-    char *buffer=malloc(6*sizeof(char));
+    char *buffer=malloc(7*sizeof(char));
     if(buffer==NULL)
         syserr("Syserr in malloc");
     
-    snprintf(buffer, 6, "IAM%c\r\n", wanted_place);
+    snprintf(buffer, 7, "IAM%c\r\n", wanted_place);
     int result = writen_data_packet(server_fd, buffer, 6);
     free(buffer);
     return result;
@@ -260,63 +266,30 @@ int load_starting_hand(char *buffer, hand* current_hand)
     int buffer_place = 6;
     while(buffer[buffer_place]!='\n' && buffer[buffer_place]!='\r')
     {
-        if(buffer[buffer_place]>='2' && buffer[buffer_place]<='9')
-        {
-            current_hand->cards[currently_loading_card].rank = buffer[buffer_place] - '0';
-            buffer_place++;
-        }
-        else if(buffer[buffer_place] == '1' && buffer[buffer_place] == '0')
-        {
-            current_hand->cards[currently_loading_card].rank = 10;
-            buffer_place = buffer_place + 2;
-        }
-        else if(buffer[buffer_place] == 'J')
-        {
-            current_hand->cards[currently_loading_card].rank = 11;
-            buffer_place++;
-        }
-        else if(buffer[buffer_place] == 'Q')
-        {
-            current_hand->cards[currently_loading_card].rank = 12;
-            buffer_place++;
-        }
-        else if(buffer[buffer_place] == 'K')
-        {
-            current_hand->cards[currently_loading_card].rank = 13;
-            buffer_place++;
-        }
-        else if(buffer[buffer_place] == 'A')
-        {
-            current_hand->cards[currently_loading_card].rank = 14;
-            buffer_place++;
-        }
-        else
-        {
-            error("Wrong contents of DEAL message. Message content : %s", buffer);
-            return -1;
-        }
+        int loading_result = load_card_from_this_buffer_place(buffer, &buffer_place, &current_hand->cards[currently_loading_card]);
+        if(loading_result<0)
+            return loading_result;
 
-        if(buffer[buffer_place] == 'C' || buffer[buffer_place] == 'D' || buffer[buffer_place] == 'H' || buffer[buffer_place] == 'S')
-        {
-            current_hand->cards[currently_loading_card].suit = buffer[buffer_place];
-        }
-        else 
-        {
-            error("Wrong contents of DEAL message. Message content : %s", buffer);
-            return -1;
-        }
-
-        buffer_place++;
         currently_loading_card++;
     }
     return 0;
 }
 
-int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int *current_round, bool is_automatic, int deal_type, bool *is_taken, char place_at_table)
+int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int current_round, bool is_automatic, int deal_type, bool *is_taken, char place_at_table)
 {
     char *buffer = malloc(25*sizeof(char));
-    if(readn_message(server_fd, buffer, 25)==-1)
+    if(buffer == NULL)
+    {
+        syserr("Malloc error");
         return -1;
+    }
+
+    if(readn_message(server_fd, buffer, 25)==-1)
+    {
+        free(buffer);
+        return -1;
+    }
+        
 
     if(buffer[0] == 'T' && buffer[1] == 'A' && buffer[2] == 'K' && buffer[3] == 'E' && buffer[4] == 'N')
     {
@@ -328,61 +301,305 @@ int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_tri
     else if(buffer[0] == 'T' && buffer[1] == 'R' && buffer[2] == 'I' && buffer[3] == 'C' && buffer[4] == 'K')
     {
         *is_taken = false;
-        int result = load_contents_of_TRICK(buffer, current_trick, is_automatic);
+        int result = load_contents_of_TRICK(buffer, current_trick, is_automatic, current_round);
         free(buffer);
         return result;
     }
     else
     {
         error("Unrecognised type of message, expected TAKEN or TRICK. Message content : %s", buffer);
+        free(buffer);
         return -1;
     }
 }
 
-int receive_TAKEN(int server_fd, hand *current_hand, int *current_points, int *current_round, bool is_automatic, int deal_type, char place_at_table)
+int receive_TAKEN(int server_fd, hand *current_hand, int *current_points, int current_round, bool is_automatic, int deal_type, char place_at_table)
 {
     char *buffer = malloc(25*sizeof(char));
-    if(readn_message(server_fd, buffer, 25)==-1)
+    if(buffer == NULL)
+    {
+        syserr("Malloc error");
         return -1;
+    }
+
+    if(readn_message(server_fd, buffer, 25)==-1)
+    {
+        free(buffer);
+        return -1;
+    }
 
     if(buffer[0] == 'T' && buffer[1] == 'A' && buffer[2] == 'K' && buffer[3] == 'E' && buffer[4] == 'N')
     {
-        *is_taken = true;
-        return load_contents_of_TAKEN(buffer, current_hand, current_points, current_round, is_automatic, deal_type, place_at_table);
+        int result = load_contents_of_TAKEN(buffer, current_hand, current_points, current_round, is_automatic, deal_type, place_at_table);
+        free(buffer);
+        return result;
     }
     else
     {
         error("Unrecognised type of message, expected TAKEN. Message content : %s", buffer);
+        free(buffer);
         return -1;
     }
 }
 
-int receive_TRICK(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int *current_round, bool is_automatic, int deal_type, bool *is_taken, char place_at_table)
+int receive_TRICK(int server_fd, trick *current_trick, int current_round, bool is_automatic, bool *is_taken)
 {
     char *buffer = malloc(25*sizeof(char));
-    if(readn_message(server_fd, buffer, 25)==-1)
+    if(buffer == NULL)
+    {
+        syserr("Malloc error");
         return -1;
+    }
+    
+    if(readn_message(server_fd, buffer, 25)==-1)
+    {
+        free(buffer);
+        return -1;
+    }
 
     if(buffer[0] == 'T' && buffer[1] == 'R' && buffer[2] == 'I' && buffer[3] == 'C' && buffer[4] == 'K')
     {
         *is_taken = false;
-        int result = load_contents_of_TRICK(buffer, current_trick, is_automatic);
+        int result = load_contents_of_TRICK(buffer, current_trick, is_automatic, current_round);
         free(buffer);
         return result;
     }
     else
     {
         error("Unrecognised type of message, expected TRICK. Message content : %s", buffer);
+        free(buffer);
         return -1;
     }
 }
 
-int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int *current_round, bool is_automatic, int deal_type, char place_at_table)
+int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int current_round, bool is_automatic, int deal_type, char place_at_table)
 {
+    int buffer_place=5;
+    int load_round_number_results = load_round_number_TAKEN_or_TRICK(buffer, current_round, &buffer_place);
+    if(load_round_number_results < 0)
+        return load_round_number_results;
+    
+    card *cards_taken = malloc(4*sizeof(card));
+    int load_card_list_results = load_card_list_TAKEN(buffer, current_hand, &buffer_place, cards_taken);
+    if(load_card_list_results < 0)
+    {
+        free(cards_taken);
+        return load_card_list_results;
+    }
+        
 
+    int load_client_taking_result = load_client_taking_and_count_points_TAKEN(buffer, current_round, deal_type, current_points, place_at_table, &buffer_place, cards_taken);
+    free(cards_taken);
+    if(load_client_taking_result < 0)
+        return load_card_list_results;
+    
+    if(buffer[buffer_place]!='\r' || buffer[buffer_place+1]!='\n')
+    {
+        error("Wrong contents of a message. Message content : %s", buffer);
+        return -1;
+    } 
+    return 0;
 }
 
-int load_contents_of_TRICK(char *buffer, trick *current_trick, bool is_automatic)
+int load_round_number_TAKEN_or_TRICK(char *buffer, int current_round, int *buffer_place)
 {
+    if(current_round<10)
+    {
+        if(buffer[*buffer_place]-'0' == current_round)
+        {
+            *buffer_place = *buffer_place+1;
+            return 0;
+        }
+        else
+        {
+            error("Wrong round number in the message: %s", buffer);
+            return -1;
+        }
+    }
+    else
+    {
+        if(buffer[*buffer_place] == '1' && buffer[*buffer_place + 1]-'0' == current_round-10)
+        {
+            *buffer_place = *buffer_place+2;
+            return 0;
+        }
+        else
+        {
+            error("Wrong round number in the message: %s", buffer);
+            return -1;
+        }
+    }
+}
 
+int load_card_list_TAKEN(char *buffer, hand *current_hand, int *buffer_place, card *cards_taken)
+{
+    int current_card_amount = cards_amount(current_hand);
+    for(int i=0; i<4; i++)
+    {
+        int load_card_results = load_card_from_this_buffer_place(buffer, buffer_place, &cards_taken[i]);
+        if(load_card_results<0)
+            return load_card_results;
+
+        take_card_out_of_hand(current_hand, &cards_taken[i]);
+    }
+    if(cards_amount(current_hand) != current_card_amount-1)
+    {
+        error("This taken message had no, or too many, cards belonging to this client: %s", buffer);
+        return -1;
+    }
+    return 0;
+}
+
+int load_client_taking_and_count_points_TAKEN(char *buffer, int current_round, int deal_type, int *current_points, char place_at_table, int *buffer_place, card *cards_taken)
+{
+    if(buffer[*buffer_place] == 'N' || buffer[*buffer_place] == 'E' || buffer[*buffer_place] == 'S' || buffer[*buffer_place] == 'W')
+    {
+        *buffer_place = *buffer_place + 1;
+        if(place_at_table == buffer[*buffer_place])
+        {
+            if(deal_type == 1 || deal_type == 7)
+            {
+                *current_points = *current_points + 1;
+            }
+            if(deal_type == 2 || deal_type == 7)
+            {
+                for(int i=0; i<4; i++)
+                {
+                    if(cards_taken[i].suit == 'H')
+                    {
+                        *current_points = *current_points + 1;
+                    }
+                }
+            }
+            if(deal_type == 3 || deal_type == 7)
+            {
+                for(int i=0; i<4; i++)
+                {
+                    if(cards_taken[i].rank == 12)
+                    {
+                        *current_points = *current_points + 5;
+                    }
+                }
+            }
+            if(deal_type == 4 || deal_type == 7)
+            {
+                for(int i=0; i<4; i++)
+                {
+                    if(cards_taken[i].rank == 11 || cards_taken[i].rank == 13)
+                    {
+                        *current_points = *current_points + 2;
+                    }
+                }
+            }
+            if(deal_type == 5 || deal_type == 7)
+            {
+                for(int i=0; i<4; i++)
+                {
+                    if(cards_taken[i].suit == 'H' || cards_taken[i].rank == 13)
+                    {
+                        *current_points = *current_points + 18;
+                    }
+                }
+            }
+            if(deal_type == 6 || deal_type == 7)
+            {
+                if(current_round == 7 || current_round == 13)
+                {
+                    *current_points = *current_points + 10;
+                }
+            }
+        }
+
+    }
+    else
+    {
+        error("Wrong contents of a message. Message content : %s", buffer);
+        return -1;
+    }
+    return 0;
+}
+
+int load_contents_of_TRICK(char *buffer, trick *current_trick, bool is_automatic, int current_round)
+{
+    int buffer_place=5;
+    int load_round_number_results = load_round_number_TAKEN_or_TRICK(buffer, current_round, &buffer_place);
+    if(load_round_number_results < 0)
+        return load_round_number_results;
+
+    current_trick->amount=0;
+    while(buffer[buffer_place]!='\r' && current_trick->amount < 3)
+    {
+        int load_card_result = load_card_from_this_buffer_place(buffer, &buffer_place, &(current_trick->cards[current_trick->amount]));
+        if (load_card_result < 0)
+        {
+            return load_card_result;
+        }
+        else
+        {
+            current_trick->amount++;
+        }
+    }
+
+    if(buffer[buffer_place]!='\r' || buffer[buffer_place+1]!='\n')
+    {
+        error("Wrong contents of a message. Message content : %s", buffer);
+        return -1;
+    } 
+    return 0;
+}
+
+int load_card_from_this_buffer_place(char *buffer, int *buffer_place, card *loaded_card)
+{
+    if(buffer[*buffer_place]>='2' && buffer[*buffer_place]<='9')
+    {
+        loaded_card->rank = buffer[*buffer_place] - '0';
+        *buffer_place = *buffer_place+1;
+    }
+    else if(buffer[*buffer_place] == '1' && buffer[*buffer_place] == '0')
+    {
+        loaded_card->rank = 10;
+        *buffer_place = *buffer_place + 2;
+    }
+    else if(buffer[*buffer_place] == 'J')
+    {
+        loaded_card->rank = 11;
+        *buffer_place = *buffer_place+1;
+    }
+    else if(buffer[*buffer_place] == 'Q')
+    {
+        loaded_card->rank = 12;
+        *buffer_place = *buffer_place+1;
+    }
+    else if(buffer[*buffer_place] == 'K')
+    {
+        loaded_card->rank = 13;
+        *buffer_place = *buffer_place+1;
+    }
+    else if(buffer[*buffer_place] == 'A')
+    {
+        loaded_card->rank = 14;
+        *buffer_place = *buffer_place+1;
+    }
+    else
+    {
+        error("Wrong contents of a message. Message content : %s", buffer);
+        return -1;
+    }
+
+    if(buffer[*buffer_place] == 'C' || buffer[*buffer_place] == 'D' || buffer[*buffer_place] == 'H' || buffer[*buffer_place] == 'S')
+    {
+        loaded_card->suit = buffer[*buffer_place];
+        *buffer_place = *buffer_place+1;
+    }
+    else 
+    {
+        error("Wrong contents of a message. Message content : %s", buffer);
+        return -1;
+    }
+    return 0;
+}
+
+int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int *current_points, int current_round, int deal_type)
+{
+    return 0;
 }

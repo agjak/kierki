@@ -145,7 +145,7 @@ int readn_data_packet(int client_fd, void* result, size_t size)
     return 0;
 }
 
-int readn_message(int client_fd, void* result, size_t max_size)
+int readn_message(int client_fd, char* result, size_t max_size)
 {
     ssize_t read_length;
     ssize_t current_location = 0;
@@ -172,7 +172,7 @@ int readn_message(int client_fd, void* result, size_t max_size)
             end_of_message = true;
             result[current_location+1] = '\0';
         }
-        if(current_location==max_size-1)
+        if(current_location==(ssize_t)max_size-1)
         {
             error("Message bigger than expected");
             return -1;
@@ -181,4 +181,40 @@ int readn_message(int client_fd, void* result, size_t max_size)
     }
     
     return 0;
+}
+
+void take_card_out_of_hand(hand *client_hand, card* card_to_take_out)
+{
+    bool card_found=false;
+    for(int i=0; i<13; i++)
+    {
+        if(!card_found)
+        {
+            if(client_hand->cards[i].rank == card_to_take_out->rank && client_hand->cards[i].suit == card_to_take_out->suit)
+            {
+                card_found=true;
+                client_hand->cards[i].rank=0;
+                client_hand->cards[i].suit='0';
+            }
+        }
+        else
+        {
+            client_hand->cards[i-1].rank=client_hand->cards[i].rank;
+            client_hand->cards[i-1].suit=client_hand->cards[i].suit;
+            client_hand->cards[i].rank=0;
+            client_hand->cards[i].suit='0';
+        }
+    }
+}
+
+int cards_amount(hand *client_hand)
+{
+    for(int i=0; i<13; i++)
+    {
+        if(client_hand->cards[i].rank == 0 && client_hand->cards[i].suit == '0')
+        {
+            return i;
+        }
+    }
+    return 13;
 }
