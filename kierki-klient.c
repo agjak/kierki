@@ -26,13 +26,15 @@ int load_card_list_TAKEN(char *buffer, hand *current_hand, int *buffer_place, ca
 int load_client_taking_and_count_points_TAKEN(char *buffer, int current_round, int deal_type, int *current_points, char place_at_table, int *buffer_place, card *cards_taken);
 int load_contents_of_TRICK(char *buffer, trick *current_trick, bool is_automatic, int current_round);
 int load_card_from_this_buffer_place(char *buffer, int *buffer_place, card *loaded_card);
-int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int *current_points, int current_round, int deal_type);
-int receive_TOTAL(int server_fd, int *current_points, bool is_automatic);
-int receive_SCORE(int server_fd, int *current_points, bool is_automatic);
-int load_contents_of_SCORE(char *buffer, int *current_points, bool is_automatic);
-int load_contents_of_TOTAL(char *buffer, int *current_points, bool is_automatic);
+int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int *current_points, int current_round, int deal_type, trick *current_trick);
+int receive_TOTAL(int server_fd, bool is_automatic);
+int receive_SCORE(int server_fd, bool is_automatic);
+int load_contents_of_SCORE(char *buffer, bool is_automatic);
+int load_contents_of_TOTAL(char *buffer, bool is_automatic);
+void choose_a_card(card *chosen_card, hand *current_hand, bool is_automatic, int current_round, int deal_type, trick *current_trick);
 
-char *server_address_and_port, client_address_and_port;
+char *server_address_and_port;
+char *client_address_and_port;
 
 int main(int argc, char *argv[]) {
 
@@ -49,13 +51,15 @@ int main(int argc, char *argv[]) {
 
     if(send_IAM(server_fd, wanted_place)<0)
         return -1;
+
+    int deal_type, current_points, current_round;
     
     while(true)
     {
         new_hand_dealt:
-        int deal_type = 0;
-        int current_points = 0;
-        int current_round = 0;
+        deal_type = 0;
+        current_points = 0;
+        current_round = 0;
 
         hand *current_hand = malloc(sizeof(hand));
 
@@ -84,14 +88,14 @@ int main(int argc, char *argv[]) {
             {
                 free(current_hand);
                 free(current_trick);
-                int total_result = receive_TOTAL(server_fd, &current_points, is_automatic);
+                int total_result = receive_TOTAL(server_fd, is_automatic);
                 if(total_result<0)
                     return total_result;
                 goto new_hand_dealt;
             }
         }
-        respond_to_TRICK(server_fd, current_hand, is_automatic, &current_points, current_round, deal_type);
-        int taken_result = receive_TAKEN(server_fd, current_hand, &current_points, current_round, is_automatic, deal_type, place_at_table);
+        respond_to_TRICK(server_fd, current_hand, is_automatic, &current_points, current_round, deal_type, current_trick);
+        int taken_result = receive_TAKEN(server_fd, current_hand, &current_points, current_round, is_automatic, deal_type, wanted_place);
         if(taken_result<0)
         {
             free(current_hand);
@@ -114,13 +118,13 @@ int main(int argc, char *argv[]) {
             {
                 free(current_hand);
                 free(current_trick);
-                int total_result = receive_TOTAL(server_fd, &current_points, is_automatic);
+                int total_result = receive_TOTAL(server_fd, is_automatic);
                 if(total_result<0)
                     return total_result;
                 goto new_hand_dealt;
             }
-            respond_to_TRICK(server_fd, current_hand, is_automatic, &current_points, current_round, deal_type);
-            int taken_result = receive_TAKEN(server_fd, current_hand, &current_points, current_round, is_automatic, deal_type, place_at_table);
+            respond_to_TRICK(server_fd, current_hand, is_automatic, &current_points, current_round, deal_type, current_trick);
+            int taken_result = receive_TAKEN(server_fd, current_hand, &current_points, current_round, is_automatic, deal_type, wanted_place);
             if(taken_result<0)
             {
                 free(current_hand);
@@ -131,11 +135,11 @@ int main(int argc, char *argv[]) {
 
         free(current_hand);
         free(current_trick);
-        int score_result = receive_SCORE(server_fd, &current_points, is_automatic);
+        int score_result = receive_SCORE(server_fd, is_automatic);
         if(score_result<0)
             return score_result;
 
-        int total_result = receive_TOTAL(server_fd, &current_points, is_automatic);
+        int total_result = receive_TOTAL(server_fd, is_automatic);
         if(total_result<0)
             return total_result;
     }
@@ -381,7 +385,7 @@ int receive_TAKEN_or_TRICK_or_SCORE(int server_fd, hand *current_hand, trick *cu
     {
         *is_taken = false;
         *is_score = true;
-        int result = load_contents_of_SCORE(buffer, current_points, is_automatic);
+        int result = load_contents_of_SCORE(buffer, is_automatic);
         free(buffer);
         return result;
     }
@@ -446,7 +450,7 @@ int receive_TRICK_or_SCORE(int server_fd, trick *current_trick, int current_roun
     else if(buffer[0] == 'S' && buffer[1] == 'C' && buffer[2] == 'O' && buffer[3] == 'R' && buffer[4] == 'E')
     {
         *is_score = true;
-        int result = load_contents_of_SCORE(buffer, current_points, is_automatic);
+        int result = load_contents_of_SCORE(buffer, is_automatic);
         free(buffer);
         return result;
     }
@@ -685,12 +689,58 @@ int load_card_from_this_buffer_place(char *buffer, int *buffer_place, card *load
     return 0;
 }
 
-int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int *current_points, int current_round, int deal_type)
+int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int *current_points, int current_round, int deal_type, trick *current_trick)
 {
-    return 0;
+    card *chosen_card = malloc(sizeof(card));
+    choose_a_card(chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
+
+    take_card_out_of_hand(current_hand, chosen_card);
+
+    int msg_size = 10;
+    int rank_size = 1;
+    if(current_round > 9)
+        msg_size++;
+
+    if(chosen_card->rank == 10)
+    {
+        msg_size++;
+        rank_size++;
+    }
+        
+
+    char *chosen_rank = malloc(rank_size * sizeof(char));
+    if(chosen_card->rank >= 2 && chosen_card->rank <=9){
+        chosen_rank[0] = '0' + chosen_card->rank;
+    }
+    if(chosen_card->rank == 10){
+        chosen_rank[0] = '1';
+        chosen_rank[1] = '0';
+    }
+    if(chosen_card->rank == 11){
+        chosen_rank[0] = 'J';
+    }
+    if(chosen_card->rank == 12){
+        chosen_rank[0] = 'Q';
+    }
+    if(chosen_card->rank == 13){
+        chosen_rank[0] = 'K';
+    }
+    if(chosen_card->rank == 14){
+        chosen_rank[0] = 'A';
+    }
+
+    char *message = malloc(msg_size * sizeof(char));
+
+    snprintf(message, msg_size, "TRICK%d%s%c\r\n", current_round, chosen_rank, chosen_card->suit);
+    int result = writen_data_packet(server_fd, message, msg_size);
+    free(message);
+    free(chosen_rank);
+    free(chosen_card);
+    return result;
+
 }
 
-int receive_TOTAL(int server_fd, int *current_points, bool is_automatic)
+int receive_TOTAL(int server_fd, bool is_automatic)
 {
     char *buffer = malloc(25*sizeof(char));
     if(buffer == NULL)
@@ -707,7 +757,7 @@ int receive_TOTAL(int server_fd, int *current_points, bool is_automatic)
 
     if(buffer[0] == 'T' && buffer[1] == 'O' && buffer[2] == 'T' && buffer[3] == 'A' && buffer[4] == 'L')
     {
-        int result = load_contents_of_TOTAL(buffer, current_points, is_automatic);
+        int result = load_contents_of_TOTAL(buffer, is_automatic);
         free(buffer);
         return result;
     }
@@ -719,7 +769,7 @@ int receive_TOTAL(int server_fd, int *current_points, bool is_automatic)
     }
 }
 
-int receive_SCORE(int server_fd, int *current_points, bool is_automatic)
+int receive_SCORE(int server_fd, bool is_automatic)
 {
     char *buffer = malloc(25*sizeof(char));
     if(buffer == NULL)
@@ -736,7 +786,7 @@ int receive_SCORE(int server_fd, int *current_points, bool is_automatic)
 
     if(buffer[0] == 'S' && buffer[1] == 'C' && buffer[2] == 'O' && buffer[3] == 'R' && buffer[4] == 'E')
     {
-        int result = load_contents_of_SCORE(buffer, current_points, is_automatic);
+        int result = load_contents_of_SCORE(buffer, is_automatic);
         free(buffer);
         return result;
     }
@@ -748,26 +798,55 @@ int receive_SCORE(int server_fd, int *current_points, bool is_automatic)
     }
 }
 
-int load_contents_of_TOTAL(char *buffer, int *current_points, bool is_automatic)
+int load_contents_of_TOTAL(char *buffer, bool is_automatic)
 {
-    if(is_automatic)
+    if(!is_automatic)
     {
-        write_out_raport(buffer);
+        printf("%s", buffer);
+        printf("The total scores are:\n");
+        int buffer_place = 5;
+        while(buffer[buffer_place] != '\r' && buffer[buffer_place] != '\n')
+        {
+            printf("%c | ", buffer[buffer_place]);
+            buffer_place++;
+            while(buffer[buffer_place] >= '0' && buffer[buffer_place] <= '9')
+            {
+                printf("%c", buffer[buffer_place]);
+            }
+            printf("\n");
+        }
+        printf("\n");
     }
-    else
-    {
-
-    }
+    return 0;
 }
 
-int load_contents_of_SCORE(char *buffer, int *current_points, bool is_automatic)
+int load_contents_of_SCORE(char *buffer, bool is_automatic)
+{
+    if(!is_automatic)
+    {
+        printf("%s", buffer);
+        printf("The scores are:\n");
+        int buffer_place = 5;
+        while(buffer[buffer_place] != '\r' && buffer[buffer_place] != '\n')
+        {
+            printf("%c | ", buffer[buffer_place]);
+            buffer_place++;
+            while(buffer[buffer_place] >= '0' && buffer[buffer_place] <= '9')
+            {
+                printf("%c", buffer[buffer_place]);
+            }
+            printf("\n");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+
+void choose_a_card(card *chosen_card, hand *current_hand, bool is_automatic, int current_round, int deal_type, trick *current_trick)
 {
     if(is_automatic)
     {
-        write_out_raport(buffer);
-    }
-    else
-    {
-
+        chosen_card->rank = current_hand->cards[0].rank;
+        chosen_card->suit = current_hand->cards[0].suit;
     }
 }
