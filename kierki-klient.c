@@ -17,7 +17,9 @@ int send_IAM(int server_fd, char wanted_place);
 int receive_BUSY_or_DEAL(int server_fd, hand *current_hand, bool is_automatic, int *deal_type);
 int print_out_busy_message(char *buffer);
 int load_starting_hand(char *buffer, hand* current_hand);
-int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int current_round, bool is_automatic, int deal_type, bool *is_taken, char place_at_table);
+int receive_TAKEN_or_TRICK_or_SCORE(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int current_round, bool is_automatic, int deal_type, bool *is_taken, bool *is_score, char place_at_table);
+int receive_TAKEN(int server_fd, hand *current_hand, int *current_points, int current_round, bool is_automatic, int deal_type, char place_at_table);
+int receive_TRICK_or_SCORE(int server_fd, trick *current_trick, int current_round, bool is_automatic, int *current_points, bool *is_score);
 int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int current_round, bool is_automatic, int deal_type, char place_at_table);
 int load_round_number_TAKEN_or_TRICK(char *buffer, int current_round, int *buffer_place);
 int load_card_list_TAKEN(char *buffer, hand *current_hand, int *buffer_place, card *cards_taken);
@@ -25,6 +27,12 @@ int load_client_taking_and_count_points_TAKEN(char *buffer, int current_round, i
 int load_contents_of_TRICK(char *buffer, trick *current_trick, bool is_automatic, int current_round);
 int load_card_from_this_buffer_place(char *buffer, int *buffer_place, card *loaded_card);
 int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int *current_points, int current_round, int deal_type);
+int receive_TOTAL(int server_fd, int *current_points, bool is_automatic);
+int receive_SCORE(int server_fd, int *current_points, bool is_automatic);
+int load_contents_of_SCORE(char *buffer, int *current_points, bool is_automatic);
+int load_contents_of_TOTAL(char *buffer, int *current_points, bool is_automatic);
+
+char *server_address_and_port, client_address_and_port;
 
 int main(int argc, char *argv[]) {
 
@@ -42,31 +50,95 @@ int main(int argc, char *argv[]) {
     if(send_IAM(server_fd, wanted_place)<0)
         return -1;
     
-    int deal_type = 0;
-    int current_points = 0;
-    int current_round = 0;
-
-    hand *current_hand = malloc(sizeof(hand));
-
-    int busy_or_deal_result = receive_BUSY_or_DEAL(server_fd, current_hand, is_automatic, &deal_type);
-    if(busy_or_deal_result<0)
+    while(true)
     {
-        return busy_or_deal_result;
-    }
+        new_hand_dealt:
+        int deal_type = 0;
+        int current_points = 0;
+        int current_round = 0;
 
-    trick *current_trick = malloc(sizeof(trick));
+        hand *current_hand = malloc(sizeof(hand));
 
-    bool is_taken = true;
-    while(is_taken)
-    {
-        current_round++;
-        int taken_or_trick_result = receive_TAKEN_or_TRICK(server_fd, current_hand, current_trick, &current_points, current_round, is_automatic, deal_type, &is_taken, wanted_place);
-        if(taken_or_trick_result<0)
+        int busy_or_deal_result = receive_BUSY_or_DEAL(server_fd, current_hand, is_automatic, &deal_type);
+        if(busy_or_deal_result<0)
         {
-            return taken_or_trick_result;
+            free(current_hand);
+            return busy_or_deal_result;
         }
+
+        trick *current_trick = malloc(sizeof(trick));
+
+        bool is_taken = true;
+        bool is_score = false;
+        while(is_taken)
+        {
+            current_round++;
+            int taken_or_trick_or_score_result = receive_TAKEN_or_TRICK_or_SCORE(server_fd, current_hand, current_trick, &current_points, current_round, is_automatic, deal_type, &is_taken, &is_score, wanted_place);
+            if(taken_or_trick_or_score_result<0)
+            {
+                free(current_hand);
+                free(current_trick);
+                return taken_or_trick_or_score_result;
+            }
+            if(is_score)
+            {
+                free(current_hand);
+                free(current_trick);
+                int total_result = receive_TOTAL(server_fd, &current_points, is_automatic);
+                if(total_result<0)
+                    return total_result;
+                goto new_hand_dealt;
+            }
+        }
+        respond_to_TRICK(server_fd, current_hand, is_automatic, &current_points, current_round, deal_type);
+        int taken_result = receive_TAKEN(server_fd, current_hand, &current_points, current_round, is_automatic, deal_type, place_at_table);
+        if(taken_result<0)
+        {
+            free(current_hand);
+            free(current_trick);
+            return taken_result;
+        }
+
+        while(current_round<13)
+        {
+            current_round++;
+            bool is_score = false;
+            int trick_result = receive_TRICK_or_SCORE(server_fd, current_trick, current_round, is_automatic, &current_points, &is_score);
+            if(trick_result<0)
+            {
+                free(current_hand);
+                free(current_trick);
+                return trick_result;
+            }
+            if(is_score)
+            {
+                free(current_hand);
+                free(current_trick);
+                int total_result = receive_TOTAL(server_fd, &current_points, is_automatic);
+                if(total_result<0)
+                    return total_result;
+                goto new_hand_dealt;
+            }
+            respond_to_TRICK(server_fd, current_hand, is_automatic, &current_points, current_round, deal_type);
+            int taken_result = receive_TAKEN(server_fd, current_hand, &current_points, current_round, is_automatic, deal_type, place_at_table);
+            if(taken_result<0)
+            {
+                free(current_hand);
+                free(current_trick);
+                return taken_result;
+            }
+        }
+
+        free(current_hand);
+        free(current_trick);
+        int score_result = receive_SCORE(server_fd, &current_points, is_automatic);
+        if(score_result<0)
+            return score_result;
+
+        int total_result = receive_TOTAL(server_fd, &current_points, is_automatic);
+        if(total_result<0)
+            return total_result;
     }
-    respond_to_TRICK(server_fd, current_hand, is_automatic, &current_points, current_round, deal_type);
     
     return 0;
 
@@ -165,7 +237,7 @@ int send_IAM(int server_fd, char wanted_place)
 int receive_BUSY_or_DEAL(int server_fd, hand *current_hand, bool is_automatic, int *deal_type)
 {
     char *buffer = malloc(40*sizeof(char));
-    if(readn_message(server_fd, buffer, 40)==-1)
+    if(readn_message(server_fd, buffer, 40, is_automatic, server_address_and_port, client_address_and_port)==-1)
         return -1;
     
     if(buffer[0] == 'B' && buffer[1] == 'U' && buffer[2] == 'S' && buffer[3] == 'Y')
@@ -275,7 +347,7 @@ int load_starting_hand(char *buffer, hand* current_hand)
     return 0;
 }
 
-int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int current_round, bool is_automatic, int deal_type, bool *is_taken, char place_at_table)
+int receive_TAKEN_or_TRICK_or_SCORE(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int current_round, bool is_automatic, int deal_type, bool *is_taken, bool *is_score, char place_at_table)
 {
     char *buffer = malloc(25*sizeof(char));
     if(buffer == NULL)
@@ -284,7 +356,7 @@ int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_tri
         return -1;
     }
 
-    if(readn_message(server_fd, buffer, 25)==-1)
+    if(readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port)==-1)
     {
         free(buffer);
         return -1;
@@ -305,6 +377,14 @@ int receive_TAKEN_or_TRICK(int server_fd, hand *current_hand, trick *current_tri
         free(buffer);
         return result;
     }
+    else if(buffer[0] == 'S' && buffer[1] == 'C' && buffer[2] == 'O' && buffer[3] == 'R' && buffer[4] == 'E')
+    {
+        *is_taken = false;
+        *is_score = true;
+        int result = load_contents_of_SCORE(buffer, current_points, is_automatic);
+        free(buffer);
+        return result;
+    }
     else
     {
         error("Unrecognised type of message, expected TAKEN or TRICK. Message content : %s", buffer);
@@ -322,7 +402,7 @@ int receive_TAKEN(int server_fd, hand *current_hand, int *current_points, int cu
         return -1;
     }
 
-    if(readn_message(server_fd, buffer, 25)==-1)
+    if(readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port)==-1)
     {
         free(buffer);
         return -1;
@@ -342,7 +422,7 @@ int receive_TAKEN(int server_fd, hand *current_hand, int *current_points, int cu
     }
 }
 
-int receive_TRICK(int server_fd, trick *current_trick, int current_round, bool is_automatic, bool *is_taken)
+int receive_TRICK_or_SCORE(int server_fd, trick *current_trick, int current_round, bool is_automatic, int *current_points, bool *is_score)
 {
     char *buffer = malloc(25*sizeof(char));
     if(buffer == NULL)
@@ -351,7 +431,7 @@ int receive_TRICK(int server_fd, trick *current_trick, int current_round, bool i
         return -1;
     }
     
-    if(readn_message(server_fd, buffer, 25)==-1)
+    if(readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port)==-1)
     {
         free(buffer);
         return -1;
@@ -359,14 +439,20 @@ int receive_TRICK(int server_fd, trick *current_trick, int current_round, bool i
 
     if(buffer[0] == 'T' && buffer[1] == 'R' && buffer[2] == 'I' && buffer[3] == 'C' && buffer[4] == 'K')
     {
-        *is_taken = false;
         int result = load_contents_of_TRICK(buffer, current_trick, is_automatic, current_round);
+        free(buffer);
+        return result;
+    }
+    else if(buffer[0] == 'S' && buffer[1] == 'C' && buffer[2] == 'O' && buffer[3] == 'R' && buffer[4] == 'E')
+    {
+        *is_score = true;
+        int result = load_contents_of_SCORE(buffer, current_points, is_automatic);
         free(buffer);
         return result;
     }
     else
     {
-        error("Unrecognised type of message, expected TRICK. Message content : %s", buffer);
+        error("Unrecognised type of message, expected TRICK or SCORE. Message content : %s", buffer);
         free(buffer);
         return -1;
     }
@@ -602,4 +688,86 @@ int load_card_from_this_buffer_place(char *buffer, int *buffer_place, card *load
 int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int *current_points, int current_round, int deal_type)
 {
     return 0;
+}
+
+int receive_TOTAL(int server_fd, int *current_points, bool is_automatic)
+{
+    char *buffer = malloc(25*sizeof(char));
+    if(buffer == NULL)
+    {
+        syserr("Malloc error");
+        return -1;
+    }
+    
+    if(readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port)==-1)
+    {
+        free(buffer);
+        return -1;
+    }
+
+    if(buffer[0] == 'T' && buffer[1] == 'O' && buffer[2] == 'T' && buffer[3] == 'A' && buffer[4] == 'L')
+    {
+        int result = load_contents_of_TOTAL(buffer, current_points, is_automatic);
+        free(buffer);
+        return result;
+    }
+    else
+    {
+        error("Unrecognised type of message, expected TOTAL. Message content : %s", buffer);
+        free(buffer);
+        return -1;
+    }
+}
+
+int receive_SCORE(int server_fd, int *current_points, bool is_automatic)
+{
+    char *buffer = malloc(25*sizeof(char));
+    if(buffer == NULL)
+    {
+        syserr("Malloc error");
+        return -1;
+    }
+    
+    if(readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port)==-1)
+    {
+        free(buffer);
+        return -1;
+    }
+
+    if(buffer[0] == 'S' && buffer[1] == 'C' && buffer[2] == 'O' && buffer[3] == 'R' && buffer[4] == 'E')
+    {
+        int result = load_contents_of_SCORE(buffer, current_points, is_automatic);
+        free(buffer);
+        return result;
+    }
+    else
+    {
+        error("Unrecognised type of message, expected SCORE. Message content : %s", buffer);
+        free(buffer);
+        return -1;
+    }
+}
+
+int load_contents_of_TOTAL(char *buffer, int *current_points, bool is_automatic)
+{
+    if(is_automatic)
+    {
+        write_out_raport(buffer);
+    }
+    else
+    {
+
+    }
+}
+
+int load_contents_of_SCORE(char *buffer, int *current_points, bool is_automatic)
+{
+    if(is_automatic)
+    {
+        write_out_raport(buffer);
+    }
+    else
+    {
+
+    }
 }

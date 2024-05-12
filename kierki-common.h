@@ -8,7 +8,7 @@ ssize_t readn(int fd, void *vptr, size_t n);
 ssize_t writen(int fd, const void *vptr, size_t n);
 int writen_data_packet(int client_fd, void* to_write, size_t size);
 int readn_data_packet(int client_fd, void* result, size_t size);
-int readn_message(int client_fd, char* result, size_t max_size);
+int readn_message(int client_fd, char* result, size_t max_size, bool is_automatic, char *server_address_and_port, char *client_address_and_port);
 
 typedef struct {
     int rank;
@@ -26,3 +26,5 @@ typedef struct {
 
 void take_card_out_of_hand(hand *client_hand, card* card_to_take_out);
 int cards_amount(hand *client_hand);
+
+void write_out_raport(char *message, int message_length, char *sender_adress_and_port, char *receiver_address_and_port);

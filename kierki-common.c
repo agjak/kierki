@@ -145,7 +145,7 @@ int readn_data_packet(int client_fd, void* result, size_t size)
     return 0;
 }
 
-int readn_message(int client_fd, char* result, size_t max_size)
+int readn_message(int client_fd, char* result, size_t max_size, bool is_automatic, char *server_address_and_port, char *client_address_and_port)
 {
     ssize_t read_length;
     ssize_t current_location = 0;
@@ -179,6 +179,8 @@ int readn_message(int client_fd, char* result, size_t max_size)
         }
         current_location++;
     }
+
+    write_out_raport(result, current_location, server_address_and_port, client_address_and_port);
     
     return 0;
 }
@@ -217,4 +219,10 @@ int cards_amount(hand *client_hand)
         }
     }
     return 13;
+}
+
+void write_out_raport(char *message, int message_length, char *sender_adress_and_port, char *receiver_address_and_port)
+{
+    char *time_now="";
+    printf("[%s,%s,%s] %s", sender_adress_and_port, receiver_address_and_port, time_now, message);
 }
