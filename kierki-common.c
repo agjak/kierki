@@ -224,6 +224,39 @@ int cards_amount(hand *client_hand)
     return 13;
 }
 
+void print_out_card(card card_to_print)
+{
+    if(card_to_print.rank<=10)
+    {
+        printf("%d", card_to_print.rank);
+    }
+    else if(card_to_print.rank==11)
+    {
+        printf("J");
+    }
+    else if(card_to_print.rank==12)
+    {
+        printf("Q");
+    }
+    else if(card_to_print.rank==13)
+    {
+        printf("K");
+    }
+    else if(card_to_print.rank==14)
+    {
+        printf("A");
+    }
+    printf("%c", card_to_print.suit);
+}
+
+void print_out_hand(hand *hand_to_print)
+{
+    for(int i = 0; i<cards_amount(hand_to_print); i++)
+    {
+        print_out_card(hand_to_print->cards[i]);
+    }
+}
+
 void write_out_raport(char *message, int message_length, char *sender_adress_and_port, char *receiver_address_and_port)
 {
     char *time_now="";

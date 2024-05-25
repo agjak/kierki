@@ -26,5 +26,7 @@ typedef struct {
 
 void take_card_out_of_hand(hand *client_hand, card* card_to_take_out);
 int cards_amount(hand *client_hand);
+void print_out_card(card card_to_print);
+void print_out_hand(hand *hand_to_print);
 
 void write_out_raport(char *message, int message_length, char *sender_adress_and_port, char *receiver_address_and_port);

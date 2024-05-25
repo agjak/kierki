@@ -19,21 +19,20 @@ int print_out_busy_message(char *buffer);
 int print_out_deal_message(char *buffer);
 int print_out_wrong_message(int current_round);
 int print_out_taken_message(char *buffer, int current_round);
+int print_out_total_or_score_message(char *buffer, bool is_total);
 int load_starting_hand(char *buffer, hand* current_hand);
 int receive_TAKEN_or_TRICK_or_SCORE(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int current_round, bool is_automatic, int deal_type, bool *is_taken, bool *is_score, char place_at_table);
 int receive_TAKEN_or_WRONG(int server_fd, hand *current_hand, int *current_points, int current_round, bool is_automatic, int deal_type, char place_at_table, bool *is_wrong);
 int receive_TRICK_or_SCORE(int server_fd, trick *current_trick, int current_round, bool is_automatic, int *current_points, bool *is_score);
-int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int current_round, bool is_automatic, int deal_type, char place_at_table);
+int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int current_round, int deal_type, char place_at_table);
 int load_round_number_TAKEN_or_TRICK(char *buffer, int current_round, int *buffer_place);
 int load_card_list_TAKEN(char *buffer, hand *current_hand, int *buffer_place, card *cards_taken);
 int load_client_taking_and_count_points_TAKEN(char *buffer, int current_round, int deal_type, int *current_points, char place_at_table, int *buffer_place, card *cards_taken);
-int load_contents_of_TRICK(char *buffer, trick *current_trick, bool is_automatic, int current_round);
+int load_contents_of_TRICK(char *buffer, trick *current_trick, int current_round);
 int load_card_from_this_buffer_place(char *buffer, int *buffer_place, card *loaded_card);
 int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int *current_points, int current_round, int deal_type, trick *current_trick);
 int receive_TOTAL(int server_fd, bool is_automatic);
 int receive_SCORE(int server_fd, bool is_automatic);
-int load_contents_of_SCORE(char *buffer, bool is_automatic);
-int load_contents_of_TOTAL(char *buffer, bool is_automatic);
 void choose_a_card(card *chosen_card, hand *current_hand, bool is_automatic, int current_round, int deal_type, trick *current_trick);
 
 char *server_address_and_port;
@@ -171,6 +170,7 @@ void load_client_arguments(int argc, char *argv[], uint16_t *port, char const **
     *is_automatic = false;
     *port_declared = false;
     *wanted_place = '0';
+    *host = "none";
 
     for(int i=1; i<argc; i++)
     {
@@ -209,7 +209,7 @@ void load_client_arguments(int argc, char *argv[], uint16_t *port, char const **
         }
     }
 
-    if(*host == NULL)
+    if(strcmp(*host, "none") == 0)
     {
         fatal("Host not declared.");
     }
@@ -418,6 +418,67 @@ int print_out_taken_message(char *buffer, int current_round)
     return 0;
 }
 
+int print_out_total_or_score_message(char *buffer, bool is_total)
+{
+    int buffer_place = 0;
+    while(buffer[buffer_place] != '\r' && buffer[buffer_place] != '\n')
+    {
+        printf("%c", buffer[buffer_place]);
+    }
+    printf("\n");
+
+    if(is_total)
+    {
+        printf("The total scores are:\n");
+    }
+    else
+    {
+        printf("The scores are:\n");
+    }
+    
+    buffer_place = 5;
+    while(buffer[buffer_place] != '\r' && buffer[buffer_place] != '\n')
+    {
+        printf("%c | ", buffer[buffer_place]);
+        buffer_place++;
+        while(buffer[buffer_place] >= '0' && buffer[buffer_place] <= '9')
+        {
+            printf("%c", buffer[buffer_place]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+    return 0;
+}
+
+int print_out_trick_message(char *buffer, hand *current_hand, int current_round)
+{
+    int buffer_place = 0;
+    while(buffer[buffer_place]!='\r')
+    {
+        printf("%c", buffer[buffer_place]);
+    }
+    printf("\n");
+
+    buffer_place = 6;
+    if(current_round > 10)
+    {
+        buffer_place = 7;
+    }
+
+    printf("Trick: (%d) ", current_round);
+    while(buffer[buffer_place]!='\r')
+    {
+        printf("%c", buffer[buffer_place]);
+    }
+    printf("\n");
+    
+    printf("Available: ");
+    print_out_hand(current_hand);
+    printf("\n\n");
+    return 0;
+}
+
 int load_starting_hand(char *buffer, hand* current_hand)
 {
     int currently_loading_card = 0;
@@ -452,14 +513,24 @@ int receive_TAKEN_or_TRICK_or_SCORE(int server_fd, hand *current_hand, trick *cu
     if(buffer[0] == 'T' && buffer[1] == 'A' && buffer[2] == 'K' && buffer[3] == 'E' && buffer[4] == 'N')
     {
         *is_taken = true;
-        int result = load_contents_of_TAKEN(buffer, current_hand, current_points, current_round, is_automatic, deal_type, place_at_table);
+        int result = load_contents_of_TAKEN(buffer, current_hand, current_points, current_round, deal_type, place_at_table);
+        if(!is_automatic && result == 0)
+        {
+            if(print_out_taken_message(buffer, current_round) == -1)
+                result = -1;
+        }
         free(buffer);
         return result;
     }
     else if(buffer[0] == 'T' && buffer[1] == 'R' && buffer[2] == 'I' && buffer[3] == 'C' && buffer[4] == 'K')
     {
         *is_taken = false;
-        int result = load_contents_of_TRICK(buffer, current_trick, is_automatic, current_round);
+        int result = load_contents_of_TRICK(buffer, current_trick, current_round);
+        if(!is_automatic && result == 0)
+        {
+            if(print_out_trick_message(buffer, current_hand, current_round) == -1)
+                result = -1;
+        }
         free(buffer);
         return result;
     }
@@ -467,13 +538,17 @@ int receive_TAKEN_or_TRICK_or_SCORE(int server_fd, hand *current_hand, trick *cu
     {
         *is_taken = false;
         *is_score = true;
-        int result = load_contents_of_SCORE(buffer, is_automatic);
+        int result = 0;
+        if(is_automatic)
+        {
+            result=print_out_total_or_score_message(buffer,false);
+        }
         free(buffer);
         return result;
     }
     else
     {
-        error("Unrecognised type of message, expected TAKEN or TRICK. Message content : %s", buffer);
+        error("Unrecognised type of message, expected TAKEN or TRICK or SCORE. Message content : %s", buffer);
         free(buffer);
         return -1;
     }
@@ -496,7 +571,7 @@ int receive_TAKEN_or_WRONG(int server_fd, hand *current_hand, int *current_point
 
     if(buffer[0] == 'T' && buffer[1] == 'A' && buffer[2] == 'K' && buffer[3] == 'E' && buffer[4] == 'N')
     {
-        int result = load_contents_of_TAKEN(buffer, current_hand, current_points, current_round, is_automatic, deal_type, place_at_table);
+        int result = load_contents_of_TAKEN(buffer, current_hand, current_points, current_round, deal_type, place_at_table);
         if(!is_automatic && result == 0)
         {
             if(print_out_taken_message(buffer, current_round) == -1)
@@ -507,6 +582,7 @@ int receive_TAKEN_or_WRONG(int server_fd, hand *current_hand, int *current_point
     }
     if(buffer[0] == 'W' && buffer[1] == 'R' && buffer[2] == 'O' && buffer[3] == 'N' && buffer[4] == 'G')
     {
+        *is_wrong = true;
         if(current_round<10)
         {
             if(buffer[5] - '0' == current_round && buffer[6] == '\r' && buffer[7] == '\n')
@@ -571,14 +647,18 @@ int receive_TRICK_or_SCORE(int server_fd, trick *current_trick, int current_roun
 
     if(buffer[0] == 'T' && buffer[1] == 'R' && buffer[2] == 'I' && buffer[3] == 'C' && buffer[4] == 'K')
     {
-        int result = load_contents_of_TRICK(buffer, current_trick, is_automatic, current_round);
+        int result = load_contents_of_TRICK(buffer, current_trick, current_round);
         free(buffer);
         return result;
     }
     else if(buffer[0] == 'S' && buffer[1] == 'C' && buffer[2] == 'O' && buffer[3] == 'R' && buffer[4] == 'E')
     {
         *is_score = true;
-        int result = load_contents_of_SCORE(buffer, is_automatic);
+        int result = 0;
+        if(is_automatic)
+        {
+            result=print_out_total_or_score_message(buffer,false);
+        }
         free(buffer);
         return result;
     }
@@ -590,7 +670,7 @@ int receive_TRICK_or_SCORE(int server_fd, trick *current_trick, int current_roun
     }
 }
 
-int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int current_round, bool is_automatic, int deal_type, char place_at_table)
+int load_contents_of_TAKEN(char *buffer, hand *current_hand, int *current_points, int current_round, int deal_type, char place_at_table)
 {
     int buffer_place=5;
     int load_round_number_results = load_round_number_TAKEN_or_TRICK(buffer, current_round, &buffer_place);
@@ -737,7 +817,7 @@ int load_client_taking_and_count_points_TAKEN(char *buffer, int current_round, i
     return 0;
 }
 
-int load_contents_of_TRICK(char *buffer, trick *current_trick, bool is_automatic, int current_round)
+int load_contents_of_TRICK(char *buffer, trick *current_trick, int current_round)
 {
     int buffer_place=5;
     int load_round_number_results = load_round_number_TAKEN_or_TRICK(buffer, current_round, &buffer_place);
@@ -889,7 +969,11 @@ int receive_TOTAL(int server_fd, bool is_automatic)
 
     if(buffer[0] == 'T' && buffer[1] == 'O' && buffer[2] == 'T' && buffer[3] == 'A' && buffer[4] == 'L')
     {
-        int result = load_contents_of_TOTAL(buffer, is_automatic);
+        int result = 0;
+        if(is_automatic)
+        {
+            result=print_out_total_or_score_message(buffer,true);
+        }
         free(buffer);
         return result;
     }
@@ -918,7 +1002,11 @@ int receive_SCORE(int server_fd, bool is_automatic)
 
     if(buffer[0] == 'S' && buffer[1] == 'C' && buffer[2] == 'O' && buffer[3] == 'R' && buffer[4] == 'E')
     {
-        int result = load_contents_of_SCORE(buffer, is_automatic);
+        int result = 0;
+        if(is_automatic)
+        {
+            result=print_out_total_or_score_message(buffer,false);
+        }
         free(buffer);
         return result;
     }
@@ -930,55 +1018,47 @@ int receive_SCORE(int server_fd, bool is_automatic)
     }
 }
 
-int load_contents_of_TOTAL(char *buffer, bool is_automatic)
-{
-    if(!is_automatic)
-    {
-        printf("%s", buffer);
-        printf("The total scores are:\n");
-        int buffer_place = 5;
-        while(buffer[buffer_place] != '\r' && buffer[buffer_place] != '\n')
-        {
-            printf("%c | ", buffer[buffer_place]);
-            buffer_place++;
-            while(buffer[buffer_place] >= '0' && buffer[buffer_place] <= '9')
-            {
-                printf("%c", buffer[buffer_place]);
-            }
-            printf("\n");
-        }
-        printf("\n");
-    }
-    return 0;
-}
-
-int load_contents_of_SCORE(char *buffer, bool is_automatic)
-{
-    if(!is_automatic)
-    {
-        printf("%s", buffer);
-        printf("The scores are:\n");
-        int buffer_place = 5;
-        while(buffer[buffer_place] != '\r' && buffer[buffer_place] != '\n')
-        {
-            printf("%c | ", buffer[buffer_place]);
-            buffer_place++;
-            while(buffer[buffer_place] >= '0' && buffer[buffer_place] <= '9')
-            {
-                printf("%c", buffer[buffer_place]);
-            }
-            printf("\n");
-        }
-        printf("\n");
-    }
-    return 0;
-}
-
 void choose_a_card(card *chosen_card, hand *current_hand, bool is_automatic, int current_round, int deal_type, trick *current_trick)
 {
     if(is_automatic)
     {
-        chosen_card->rank = current_hand->cards[0].rank;
-        chosen_card->suit = current_hand->cards[0].suit;
+        if(current_round == 5 && deal_type == 3 && current_trick != NULL)
+        {
+            chosen_card->rank = current_hand->cards[1].rank;
+            chosen_card->suit = current_hand->cards[1].suit;
+        }
+        else
+        {
+            chosen_card->rank = current_hand->cards[0].rank;
+            chosen_card->suit = current_hand->cards[0].suit;
+        }
+    }
+    else
+    {
+        char *command = malloc(40*sizeof(char));
+        scanf("%s", command);
+        if(command[0] == 'c' && command[1] == 'a' && command[2] == 'r' && command[3] == 'd' && command[4] == 's' && command[5] == '\n')
+        {
+            print_out_hand(current_hand);
+            printf("\n\n");
+        }
+        else if(command[0] == 't' && command[1] == 'r' && command[2] == 'i' && command[3] == 'c' && command[4] == 'k' && command[5] == 's' && command[6] == '\n')
+        {
+            printf("I can't do this yet :(\n");
+        }
+        else if(command[0] == '!')
+        {
+            int buffer_place = 1;
+            if(load_card_from_this_buffer_place(command, &buffer_place, chosen_card) == -1)
+            {
+                printf("Wrong command entered, please try again.\n");
+                choose_a_card(chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
+            }
+        }
+        else
+        {
+            printf("Wrong command entered, please try again.\n");
+            choose_a_card(chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
+        }
     }
 }
