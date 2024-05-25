@@ -180,8 +180,10 @@ int readn_message(int client_fd, char* result, size_t max_size, bool is_automati
         }
         current_location++;
     }
-
-    write_out_raport(result, current_location, server_address_and_port, client_address_and_port);
+    if(is_automatic)
+    {
+        write_out_raport(result, current_location, server_address_and_port, client_address_and_port);
+    }
     
     return 0;
 }
