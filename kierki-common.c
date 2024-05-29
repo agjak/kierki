@@ -8,9 +8,12 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h> 
+#include <sys/time.h>
 
 #include "kierki-common.h"
 #include "err.h"
+
 
 uint16_t read_port(char const *string) {
     char *endptr;
@@ -146,48 +149,6 @@ int readn_data_packet(int client_fd, void* result, size_t size)
     return 0;
 }
 
-int readn_message(int client_fd, char* result, size_t max_size, bool is_automatic, char *server_address_and_port, char *client_address_and_port)
-{
-    ssize_t read_length;
-    ssize_t current_location = 0;
-    bool end_of_message = false;
-    while(!end_of_message)
-    {
-        read_length = readn(client_fd, &result[current_location], 1);
-        if (read_length < 0) {
-            if (errno == EAGAIN) {
-                error("Timeout while readn");
-            }
-            else {
-                error("Error with readn; errno %d", errno);
-            }
-            return -1;
-        }
-        else if (read_length == 0) {
-            error("Connection closed while readn");
-            return -1;
-        }
-        
-        if(result[current_location] == '\n')
-        {
-            end_of_message = true;
-            result[current_location+1] = '\0';
-        }
-        if(current_location==(ssize_t)max_size-1)
-        {
-            error("Message bigger than expected");
-            return -1;
-        }
-        current_location++;
-    }
-    if(is_automatic)
-    {
-        write_out_raport(result, current_location, server_address_and_port, client_address_and_port);
-    }
-    
-    return 0;
-}
-
 void take_card_out_of_hand(hand *client_hand, card* card_to_take_out)
 {
     bool card_found=false;
@@ -249,7 +210,7 @@ void print_out_card(card card_to_print)
     printf("%c", card_to_print.suit);
 }
 
-void print_out_hand(hand *hand_to_print)
+void print_out_cards_on_hand(hand *hand_to_print)
 {
     for(int i = 0; i<cards_amount(hand_to_print); i++)
     {
@@ -257,8 +218,42 @@ void print_out_hand(hand *hand_to_print)
     }
 }
 
-void write_out_raport(char *message, int message_length, char *sender_adress_and_port, char *receiver_address_and_port)
+void print_out_cards_played(hand *hand_to_print)
 {
-    char *time_now="";
-    printf("[%s,%s,%s] %s", sender_adress_and_port, receiver_address_and_port, time_now, message);
+    if(hand_to_print->played_cards[0][0].suit=='0' && hand_to_print->played_cards[0][0].rank==0)
+    {
+        printf("No cards played yet!\n");
+        return;
+    }
+    for(int i=0; i<13; i++)
+    {
+        if(hand_to_print->played_cards[i][0].suit=='0' && hand_to_print->played_cards[i][0].rank==0)
+        {
+            printf("\n");
+            return;
+        }
+        else
+        {
+            for(int j=0; j<4; j++)
+            {
+                print_out_card(hand_to_print->played_cards[i][j]);
+            }
+            printf("\n");
+        }
+    }
+
+}
+
+
+void write_out_raport(char *message, char *sender_adress_and_port, char *receiver_address_and_port)
+{
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+
+    struct tm *timeTM;
+    timeTM = localtime(&tv.tv_sec);
+    char *time_string = malloc(sizeof(char)*40);
+    strftime(time_string, 40, "%Y-%m-%dT%X", timeTM);
+    int miliseconds = (tv.tv_usec % 1000000) /1000;
+    printf("[%s,%s,%s.%d] %s", sender_adress_and_port, receiver_address_and_port, time_string, miliseconds, message);
 }
