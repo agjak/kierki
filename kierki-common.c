@@ -256,4 +256,5 @@ void write_out_raport(char *message, char *sender_adress_and_port, char *receive
     strftime(time_string, 40, "%Y-%m-%dT%X", timeTM);
     int miliseconds = (tv.tv_usec % 1000000) /1000;
     printf("[%s,%s,%s.%d] %s", sender_adress_and_port, receiver_address_and_port, time_string, miliseconds, message);
+    free(time_string);
 }

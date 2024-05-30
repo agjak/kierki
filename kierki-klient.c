@@ -17,6 +17,9 @@
 #define TIMEOUT       5000
 
 //TODO: Dodaj wyłączanie klienta kiedy serwer się wyłączy
+//TODO: Sprawdź czy adresy IPv6 działają (na studentsie?)
+//TODO: Przetestuj klienty na sensowniejszych rozdaniach kart (jest nowa heurystyka gry)
+//TODO: Czy komunikaty od klienta na pewno mają zawierać też całą treść wiadomości? Sprawdź jak zrobił kolega
 
 void load_client_arguments(int argc, char *argv[], uint16_t *port, char const **host, bool *is_IPv4, bool *is_IPv6, bool *is_automatic, char *wanted_place, bool *port_declared);
 int connect_to_server(struct sockaddr_in *server_address);
@@ -1206,15 +1209,29 @@ void choose_a_card(card *chosen_card, hand *current_hand, bool is_automatic, int
 {
     if(is_automatic)
     {
-        if(current_round == 5 && deal_type == 3 && current_trick != NULL)
-        {
-            chosen_card->rank = current_hand->cards[1].rank;
-            chosen_card->suit = current_hand->cards[1].suit;
-        }
-        else
+        if(current_trick->amount == 0)
         {
             chosen_card->rank = current_hand->cards[0].rank;
             chosen_card->suit = current_hand->cards[0].suit;
+        }
+        else
+        {
+            char current_trick_suit = current_trick->cards[0].suit;
+            chosen_card->rank = 0;
+            chosen_card->suit = '0';
+            for(int i=0; i<cards_amount(current_hand); i++)
+            {
+                if(current_hand->cards[i].suit == current_trick_suit)
+                {
+                    chosen_card->rank = current_hand->cards[i].rank;
+                    chosen_card->suit = current_hand->cards[i].suit;
+                }
+            }
+            if(chosen_card->rank == 0 && chosen_card->suit == '0')
+            {
+                chosen_card->rank = current_hand->cards[0].rank;
+                chosen_card->suit = current_hand->cards[0].suit;
+            }
         }
     }
     else
