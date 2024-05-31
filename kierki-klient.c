@@ -30,6 +30,7 @@ int print_out_deal_message(char *buffer);
 int print_out_wrong_message(int current_round);
 int print_out_taken_message(char *buffer, int current_round);
 int print_out_total_or_score_message(char *buffer, bool is_total);
+int print_out_trick_message(char *buffer, hand *current_hand, int current_round);
 int load_starting_hand(char *buffer, hand* current_hand);
 int receive_TAKEN_or_TRICK_or_SCORE(int server_fd, hand *current_hand, trick *current_trick, int *current_points, int current_round, bool is_automatic, int deal_type, bool *is_taken, bool *is_score, char place_at_table);
 int receive_TAKEN_or_WRONG(int server_fd, hand *current_hand, int *current_points, int current_round, bool is_automatic, int deal_type, char place_at_table, bool *is_wrong, trick *current_trick);
@@ -172,8 +173,17 @@ int main(int argc, char *argv[]) {
                 goto new_hand_dealt;
             }
         }
+        int trick_result;
         trick_response_first:
-        respond_to_TRICK(server_fd, current_hand, is_automatic, current_round, deal_type, current_trick);
+        trick_result = respond_to_TRICK(server_fd, current_hand, is_automatic, current_round, deal_type, current_trick);
+        if(trick_result<0)
+        {
+            free(current_hand);
+            free(current_trick);
+            free(server_address_and_port);
+            free(client_address_and_port);
+            return 1;
+        }
         bool is_wrong = false;
         int taken_result = receive_TAKEN_or_WRONG(server_fd, current_hand, &current_points, current_round, is_automatic, deal_type, wanted_place, &is_wrong, current_trick);
         if(taken_result<0)
@@ -216,7 +226,15 @@ int main(int argc, char *argv[]) {
                 goto new_hand_dealt;
             }
             trick_response_loop:
-            respond_to_TRICK(server_fd, current_hand, is_automatic, current_round, deal_type, current_trick);
+            trick_result = respond_to_TRICK(server_fd, current_hand, is_automatic, current_round, deal_type, current_trick);
+            if(trick_result<0)
+            {
+                free(current_hand);
+                free(current_trick);
+                free(server_address_and_port);
+                free(client_address_and_port);
+                return 1;
+            }
             bool is_wrong = false;
             int taken_result = receive_TAKEN_or_WRONG(server_fd, current_hand, &current_points, current_round, is_automatic, deal_type, wanted_place, &is_wrong, current_trick);
             if(taken_result<0)
@@ -769,6 +787,11 @@ int receive_TAKEN_or_WRONG(int server_fd, hand *current_hand, int *current_point
         // Additional trick sent while client was thinking how to respond
         if(is_this_trick(buffer, current_trick, current_round))
         {
+            if(print_out_trick_message(buffer, current_hand, current_round) == -1)
+            {
+                free(buffer);
+                return -1;
+            }
             free(buffer);
             return receive_TAKEN_or_WRONG(server_fd, current_hand, current_points, current_round, is_automatic, deal_type, place_at_table, is_wrong, current_trick);
         }
@@ -1280,9 +1303,50 @@ int choose_a_card(int server_fd, card *chosen_card, hand *current_hand, bool is_
                 }
             }
             else if (poll_status > 0) {
-                //Read the message
+                //Read the additional TRICK
                 if ((poll_descriptors[0].revents & POLLIN)!=0) {
-                    return -1;
+                    
+                    char *buffer = malloc(25*sizeof(char));
+                    if(buffer == NULL)
+                    {
+                        syserr("Malloc error");
+                        free(buffer);
+                        return -1;
+                    }
+
+                    int readn_message_result = readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand);
+                    if(readn_message_result!=0)
+                    {
+                        free(buffer);
+                        return -1;
+                    }
+
+                    if(buffer[0] == 'T' && buffer[1] == 'R' && buffer[2] == 'I' && buffer[3] == 'C' && buffer[4] == 'K')
+                    {
+                        if(is_this_trick(buffer, current_trick, current_round))
+                        {
+                            if(print_out_trick_message(buffer, current_hand, current_round) == -1)
+                            {
+                                free(buffer);
+                                return -1;
+                            }
+                            free(buffer);
+                            continue;
+                        }
+                        else
+                        {
+                            error("Wrong TRICK received while thinking about the next move, expected the repeat of the last TRICK. Message content : %s", buffer);
+                            free(buffer);
+                            return -1;
+                        }
+                    }
+                    else
+                    {
+                        error("A message other than TRICK received while thinking about the next move. The message: %s", buffer);
+                        free(buffer);
+                        return -1;
+                    }
+
                 }
                 else if((poll_descriptors[1].revents & POLLIN)!=0) {
                     char *command = malloc(40*sizeof(char));
