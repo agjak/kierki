@@ -10,13 +10,13 @@
 #include <inttypes.h>
 #include <arpa/inet.h>
 #include <poll.h>
+#include <signal.h>
 
 #include "err.h"
 #include "kierki-common.h"
 
 #define TIMEOUT       5000
 
-//TODO: Dodaj wyłączanie klienta kiedy serwer się wyłączy
 //TODO: Sprawdź czy adresy IPv6 działają (na studentsie?)
 //TODO: Przetestuj klienty na sensowniejszych rozdaniach kart (jest nowa heurystyka gry)
 //TODO: Czy komunikaty od klienta na pewno mają zawierać też całą treść wiadomości? Sprawdź jak zrobił kolega
@@ -43,9 +43,9 @@ int load_card_from_this_buffer_place(char *buffer, int *buffer_place, card *load
 int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int current_round, int deal_type, trick *current_trick);
 int receive_TOTAL(int server_fd, bool is_automatic, hand *current_hand);
 int receive_SCORE(int server_fd, bool is_automatic, hand *current_hand);
-void choose_a_card(card *chosen_card, hand *current_hand, bool is_automatic, int current_round, int deal_type, trick *current_trick);
+int choose_a_card(int server_fd, card *chosen_card, hand *current_hand, bool is_automatic, int current_round, int deal_type, trick *current_trick);
 bool is_this_trick(char *buffer, trick* trick, int current_round);
-int readn_message(int client_fd, char* result, size_t max_size, bool is_automatic, char *server_address_and_port, char *client_address_and_port, hand *current_hand);
+int readn_message(int server_fd, char* result, size_t max_size, bool is_automatic, char *server_address_and_port, char *client_address_and_port, hand *current_hand);
 
 char *server_address_and_port;
 char *client_address_and_port;
@@ -81,14 +81,14 @@ int main(int argc, char *argv[]) {
     {
         free(server_address_and_port);
         free(client_address_and_port);
-        return -1;
+        return 1;
     }
 
     if(send_IAM(server_fd, wanted_place, is_automatic)<0)
     {
         free(server_address_and_port);
         free(client_address_and_port);
-        return -1;
+        return 1;
     }
 
     int deal_type, current_points, current_round;
@@ -107,7 +107,7 @@ int main(int argc, char *argv[]) {
             free(server_address_and_port);
             free(client_address_and_port);
             syserr("Syserr in malloc");
-            return -1;
+            return 1;
         }
         current_hand->cards[0].suit='0';
         current_hand->cards[0].rank=0;
@@ -123,7 +123,14 @@ int main(int argc, char *argv[]) {
             free(current_hand);
             free(server_address_and_port);
             free(client_address_and_port);
-            return busy_or_deal_result;
+            return 1;
+        }
+        else if(busy_or_deal_result==1)
+        {
+            free(current_hand);
+            free(server_address_and_port);
+            free(client_address_and_port);
+            return 0;
         }
 
         trick *current_trick = malloc(sizeof(trick));
@@ -134,7 +141,7 @@ int main(int argc, char *argv[]) {
             free(server_address_and_port);
             free(client_address_and_port);
             syserr("Syserr in malloc");
-            return -1;
+            return 1;
         }
 
         bool is_taken = true;
@@ -149,7 +156,7 @@ int main(int argc, char *argv[]) {
                 free(current_trick);
                 free(server_address_and_port);
                 free(client_address_and_port);
-                return taken_or_trick_or_score_result;
+                return 1;
             }
             if(is_score)
             {
@@ -160,7 +167,7 @@ int main(int argc, char *argv[]) {
                 {
                     free(server_address_and_port);
                     free(client_address_and_port);
-                    return total_result;
+                    return 1;
                 }
                 goto new_hand_dealt;
             }
@@ -175,7 +182,7 @@ int main(int argc, char *argv[]) {
             free(current_trick);
             free(server_address_and_port);
             free(client_address_and_port);
-            return taken_result;
+            return 1;
         }
         if(is_wrong)
         {
@@ -193,7 +200,7 @@ int main(int argc, char *argv[]) {
                 free(current_trick);
                 free(server_address_and_port);
                 free(client_address_and_port);
-                return trick_result;
+                return 1;
             }
             if(is_score)
             {
@@ -204,7 +211,7 @@ int main(int argc, char *argv[]) {
                 {
                     free(server_address_and_port);
                     free(client_address_and_port);
-                    return total_result;
+                    return 1;
                 }
                 goto new_hand_dealt;
             }
@@ -218,7 +225,7 @@ int main(int argc, char *argv[]) {
                 free(current_trick);
                 free(server_address_and_port);
                 free(client_address_and_port);
-                return taken_result;
+                return 1;
             }
             if(is_wrong)
             {
@@ -234,7 +241,7 @@ int main(int argc, char *argv[]) {
             free(current_trick);
             free(server_address_and_port);
             free(client_address_and_port);
-            return score_result;
+            return 1;
         }
 
         int total_result = receive_TOTAL(server_fd, is_automatic, current_hand);
@@ -244,7 +251,7 @@ int main(int argc, char *argv[]) {
             free(current_trick);
             free(server_address_and_port);
             free(client_address_and_port);
-            return total_result;
+            return 1;
         }
         free(current_hand);
         free(current_trick);
@@ -361,10 +368,11 @@ int receive_BUSY_or_DEAL(int server_fd, hand *current_hand, bool is_automatic, i
         free(buffer);
         return -1;
     }
-    if(readn_message(server_fd, buffer, 40, is_automatic, server_address_and_port, client_address_and_port, current_hand)==-1)
+    int readn_message_result = readn_message(server_fd, buffer, 40, is_automatic, server_address_and_port, client_address_and_port, current_hand);
+    if(readn_message_result!=0)
     {
         free(buffer);
-        return -1;
+        return readn_message_result;
     }
 
     if(buffer[0] == 'B' && buffer[1] == 'U' && buffer[2] == 'S' && buffer[3] == 'Y')
@@ -626,7 +634,8 @@ int receive_TAKEN_or_TRICK_or_SCORE(int server_fd, hand *current_hand, trick *cu
         return -1;
     }
 
-    if(readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand)==-1)
+    int readn_message_result = readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand);
+    if(readn_message_result!=0)
     {
         free(buffer);
         return -1;
@@ -692,7 +701,8 @@ int receive_TAKEN_or_WRONG(int server_fd, hand *current_hand, int *current_point
         return -1;
     }
 
-    if(readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand)==-1)
+    int readn_message_result = readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand);
+    if(readn_message_result!=0)
     {
         free(buffer);
         return -1;
@@ -787,7 +797,8 @@ int receive_TRICK_or_SCORE(int server_fd, trick *current_trick, int current_roun
         return -1;
     }
     
-    if(readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand)==-1)
+    int readn_message_result = readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand);
+    if(readn_message_result!=0)
     {
         free(buffer);
         return -1;
@@ -1070,7 +1081,10 @@ int respond_to_TRICK(int server_fd, hand *current_hand, bool is_automatic, int c
         free(chosen_card);
         return -1;
     }
-    choose_a_card(chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
+    if(choose_a_card(server_fd, chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick)<0)
+    {
+        return -1;
+    }
 
     int msg_size = 10;
     int rank_size = 1;
@@ -1148,7 +1162,8 @@ int receive_TOTAL(int server_fd, bool is_automatic, hand *current_hand)
         return -1;
     }
     
-    if(readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand)==-1)
+    int readn_message_result = readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand);
+    if(readn_message_result!=0)
     {
         free(buffer);
         return -1;
@@ -1181,7 +1196,8 @@ int receive_SCORE(int server_fd, bool is_automatic, hand *current_hand)
         return -1;
     }
     
-    if(readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand)==-1)
+    int readn_message_result = readn_message(server_fd, buffer, 25, is_automatic, server_address_and_port, client_address_and_port, current_hand);
+    if(readn_message_result!=0)
     {
         free(buffer);
         return -1;
@@ -1205,7 +1221,7 @@ int receive_SCORE(int server_fd, bool is_automatic, hand *current_hand)
     }
 }
 
-void choose_a_card(card *chosen_card, hand *current_hand, bool is_automatic, int current_round, int deal_type, trick *current_trick)
+int choose_a_card(int server_fd, card *chosen_card, hand *current_hand, bool is_automatic, int current_round, int deal_type, trick *current_trick)
 {
     if(is_automatic)
     {
@@ -1233,46 +1249,88 @@ void choose_a_card(card *chosen_card, hand *current_hand, bool is_automatic, int
                 chosen_card->suit = current_hand->cards[0].suit;
             }
         }
+        return 0;
     }
     else
     {
-        char *command = malloc(40*sizeof(char));
-        if(command == NULL)
-        {
-            syserr("Malloc error");
-            free(command);
-        }
-        scanf("%s", command);
-        if(command[0] == 'c' && command[1] == 'a' && command[2] == 'r' && command[3] == 'd' && command[4] == 's')
-        {
-            free(command);
-            print_out_cards_on_hand(current_hand);
-            printf("\n\n");
-            choose_a_card(chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
-        }
-        else if(command[0] == 't' && command[1] == 'r' && command[2] == 'i' && command[3] == 'c' && command[4] == 'k' && command[5] == 's')
-        {
-            free(command);
-            print_out_cards_played(current_hand);
-            choose_a_card(chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
-        }
-        else if(command[0] == '!')
-        {
-            int buffer_place = 1;
-            if(load_card_from_this_buffer_place(command, &buffer_place, chosen_card) == -1)
-            {
-                printf("Wrong command entered, please try again.\n");
-                free(command);
-                choose_a_card(chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
+        struct pollfd poll_descriptors[2];
+
+        poll_descriptors[0].fd = server_fd;
+        poll_descriptors[0].events = POLLIN;
+        poll_descriptors[0].revents = 0;
+
+        poll_descriptors[1].fd = 0;
+        poll_descriptors[1].events = POLLIN;
+        poll_descriptors[1].revents = 0;
+
+        do {
+            for (int i = 0; i < 2; ++i) {
+                poll_descriptors[i].revents = 0;
             }
-            free(command);
-        }
-        else
-        {
-            printf("Wrong command entered, please try again.\n");
-            free(command);
-            choose_a_card(chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
-        }
+
+            int poll_status = poll(poll_descriptors, 2, TIMEOUT);
+            if (poll_status == -1 ) {
+                if (errno == EINTR) {
+                    error("interrupted system call");
+                    return -1;
+                }
+                else {
+                    error("poll");
+                    return -1;
+                }
+            }
+            else if (poll_status > 0) {
+                //Read the message
+                if ((poll_descriptors[0].revents & POLLIN)!=0) {
+                    return -1;
+                }
+                else if((poll_descriptors[1].revents & POLLIN)!=0) {
+                    char *command = malloc(40*sizeof(char));
+                    if(command == NULL)
+                    {
+                        syserr("Malloc error");
+                        free(command);
+                        return -1;
+                    }
+                    scanf("%s", command);
+                    if(command[0] == 'c' && command[1] == 'a' && command[2] == 'r' && command[3] == 'd' && command[4] == 's')
+                    {
+                        free(command);
+                        print_out_cards_on_hand(current_hand);
+                        printf("\n\n");
+                        return choose_a_card(server_fd, chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
+                    }
+                    else if(command[0] == 't' && command[1] == 'r' && command[2] == 'i' && command[3] == 'c' && command[4] == 'k' && command[5] == 's')
+                    {
+                        free(command);
+                        print_out_cards_played(current_hand);
+                        return choose_a_card(server_fd, chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
+                    }
+                    else if(command[0] == '!')
+                    {
+                        int buffer_place = 1;
+                        if(load_card_from_this_buffer_place(command, &buffer_place, chosen_card) == -1)
+                        {
+                            printf("Wrong command entered, please try again.\n");
+                            free(command);
+                            return choose_a_card(server_fd, chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
+                        }
+                        free(command);
+                        return 0;
+                    }
+                    else
+                    {
+                        printf("Wrong command entered, please try again.\n");
+                        free(command);
+                        return choose_a_card(server_fd, chosen_card, current_hand, is_automatic, current_round, deal_type, current_trick);
+                    }
+                }
+                
+            }
+
+        } while(true);
+
+        return 0;
     }
 }
 
@@ -1307,13 +1365,13 @@ bool is_this_trick(char *buffer, trick *compared_trick, int current_round)
 }
 
 
-int readn_message(int client_fd, char* result, size_t max_size, bool is_automatic, char *server_address_and_port, char *client_address_and_port, hand *current_hand)
+int readn_message(int server_fd, char* result, size_t max_size, bool is_automatic, char *server_address_and_port, char *client_address_and_port, hand *current_hand)
 {
 
     struct pollfd poll_descriptors[2];
 
     // The main socket has index 0.
-    poll_descriptors[0].fd = client_fd;
+    poll_descriptors[0].fd = server_fd;
     poll_descriptors[0].events = POLLIN;
     poll_descriptors[0].revents = 0;
 
@@ -1337,13 +1395,13 @@ int readn_message(int client_fd, char* result, size_t max_size, bool is_automati
         }
         else if (poll_status > 0) {
             //Read the message
-            if (poll_descriptors[0].revents & POLLIN) {
+            if (poll_descriptors[0].revents & (POLLIN | POLLHUP)) {
                 ssize_t read_length;
                 ssize_t current_location = 0;
                 bool end_of_message = false;
                 while(!end_of_message)
                 {
-                    read_length = readn(client_fd, &result[current_location], 1);
+                    read_length = readn(server_fd, &result[current_location], 1);
                     if (read_length < 0) {
                         if (errno == EAGAIN) {
                             error("Timeout while readn");
@@ -1354,8 +1412,8 @@ int readn_message(int client_fd, char* result, size_t max_size, bool is_automati
                         return -1;
                     }
                     else if (read_length == 0) {
-                        error("Connection closed while readn");
-                        return -1;
+                        //Connection closed
+                        return 1;
                     }
                     
                     if(result[current_location] == '\n')
@@ -1411,5 +1469,5 @@ int readn_message(int client_fd, char* result, size_t max_size, bool is_automati
 
     } while(true);
 
-    return 0;
+    return 1;
 }

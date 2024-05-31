@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <time.h> 
 #include <sys/time.h>
+#include <signal.h>
 
 #include "kierki-common.h"
 #include "err.h"
@@ -74,6 +75,20 @@ struct sockaddr_in get_server_address(char const *host, uint16_t port, bool is_I
     return send_address;
 }
 
+void install_signal_handler(int signal, void (*handler)(int), int flags) {
+    struct sigaction action;
+    sigset_t block_mask;
+
+    sigemptyset(&block_mask);
+    action.sa_handler = handler;
+    action.sa_mask = block_mask;
+    action.sa_flags = flags;
+
+    if (sigaction(signal, &action, NULL) < 0 ){
+        syserr("sigaction");
+    }
+}
+
 //Code from labs, from file sum-common.c
 #include <unistd.h>
 
@@ -120,30 +135,6 @@ int writen_data_packet(int client_fd, void* to_write, size_t size)
     int written_length = writen(client_fd, to_write, size);
     if ((size_t) written_length < size) {
         error("Error with writen; couldn't write the whole structure");
-        return -1;
-    }
-    return 0;
-}
-
-int readn_data_packet(int client_fd, void* result, size_t size)
-{
-    ssize_t read_length;
-    read_length = readn(client_fd, result, size);
-    if (read_length < 0) {
-        if (errno == EAGAIN) {
-            error("Timeout while readn");
-        }
-        else {
-            error("Error with readn; errno %d", errno);
-        }
-        return -1;
-    }
-    else if (read_length == 0) {
-        error("Connection closed while readn");
-        return -1;
-    }
-    else if ((size_t) read_length < size) {
-        error("Connection closed without providing full data structure while readn");
         return -1;
     }
     return 0;
