@@ -219,6 +219,10 @@ void print_out_cards_on_hand(hand *hand_to_print)
     for(int i = 0; i<cards_amount(hand_to_print); i++)
     {
         print_out_card(hand_to_print->cards[i]);
+        if(i!=cards_amount(hand_to_print)-1)
+        {
+            printf(", ");
+        }
     }
 }
 
@@ -226,7 +230,7 @@ void print_out_cards_played(hand *hand_to_print)
 {
     if(hand_to_print->played_cards[0][0].suit=='0' && hand_to_print->played_cards[0][0].rank==0)
     {
-        printf("No cards played yet!\n");
+        printf("\n");
         return;
     }
     for(int i=0; i<13; i++)
@@ -241,6 +245,10 @@ void print_out_cards_played(hand *hand_to_print)
             for(int j=0; j<4; j++)
             {
                 print_out_card(hand_to_print->played_cards[i][j]);
+                if(j!=3)
+                {
+                    printf(", ");
+                }
             }
             printf("\n");
         }

@@ -17,10 +17,6 @@
 
 #define TIMEOUT       5000
 
-//TODO: Sprawdź czy adresy IPv6 działają (na studentsie?)
-//TODO: Przetestuj klienty na sensowniejszych rozdaniach kart (jest nowa heurystyka gry)
-//TODO: Czy komunikaty od klienta na pewno mają zawierać też całą treść wiadomości? Sprawdź jak zrobił kolega
-
 void load_client_arguments(int argc, char *argv[], uint16_t *port, char const **host, bool *is_IPv4, bool *is_IPv6, bool *is_automatic, char *wanted_place, bool *port_declared);
 int connect_to_server_ipv4(struct sockaddr_in *server_address);
 int connect_to_server_ipv6(struct sockaddr_in6 *server_address);
@@ -74,7 +70,6 @@ int main(int argc, char *argv[]) {
         char const *server_ip = inet_ntoa(server_address_ipv4->sin_addr);
         uint16_t server_port = ntohs(server_address_ipv4->sin_port);
         snprintf(server_address_and_port, 40, "%s:%" PRIu16 , server_ip, server_port);
-        printf("%s\n", server_address_and_port);
         server_fd = connect_to_server_ipv4(server_address_ipv4);
     }
     else if(is_IPv6)
@@ -85,7 +80,6 @@ int main(int argc, char *argv[]) {
         uint16_t server_port = ntohs(server_address_ipv6->sin6_port);
         snprintf(server_address_and_port, 40, "%s:%" PRIu16 , server_ip, server_port);
         free(server_ip);
-        printf("%s\n", server_address_and_port);
         server_fd = connect_to_server_ipv6(server_address_ipv6);
     }
     else
@@ -555,10 +549,19 @@ int print_out_deal_message(char *buffer)
     }
     printf("\n");
     printf("New deal %c: staring place %c, your cards: ", deal_type, starting_place);
-    for(int i=card_list_start; i<card_list_end; i++)
+
+    int i = card_list_start;
+    card *card_to_print=malloc(sizeof(card));
+    while(i!=card_list_end)
     {
-        printf("%c", buffer[i]);
+        load_card_from_this_buffer_place(buffer, &i, card_to_print);
+        print_out_card(*card_to_print);
+        if(i!=card_list_end)
+        {
+            printf(", ");
+        }
     }
+    free(card_to_print);
     printf(".\n\n");
     return 0;
 }
@@ -593,10 +596,20 @@ int print_out_taken_message(char *buffer, int current_round)
     }
     printf("\n");
     printf("A trick %d is taken by %c, cards ", current_round, buffer[taking_client_location]);
-    for(int i=card_list_start; i<taking_client_location; i++)
+
+    int i = card_list_start;
+    card *card_to_print=malloc(sizeof(card));
+    while(i!=taking_client_location)
     {
-        printf("%c", buffer[i]);
+        load_card_from_this_buffer_place(buffer, &i, card_to_print);
+        print_out_card(*card_to_print);
+        if(i!=taking_client_location)
+        {
+            printf(", ");
+        }
     }
+    free(card_to_print);
+
     printf(".\n\n");
     return 0;
 }
@@ -653,12 +666,18 @@ int print_out_trick_message(char *buffer, hand *current_hand, int current_round)
     }
 
     printf("Trick: (%d) ", current_round);
+    card *card_to_print=malloc(sizeof(card));
     while(buffer[buffer_place]!='\r')
     {
-        printf("%c", buffer[buffer_place]);
-        buffer_place++;
+        load_card_from_this_buffer_place(buffer, &buffer_place, card_to_print);
+        print_out_card(*card_to_print);
+        if(buffer[buffer_place]!='\r')
+        {
+            printf(", ");
+        }
     }
     printf("\n");
+    free(card_to_print);
     
     printf("Available: ");
     print_out_cards_on_hand(current_hand);
@@ -1551,7 +1570,7 @@ int readn_message(int server_fd, char* result, size_t max_size, bool is_automati
                     free(command);
                     if(cards_amount(current_hand)==0)
                     {
-                        printf("No cards on hand yet\n");
+                        printf("\n");
                     }
                     print_out_cards_on_hand(current_hand);
                     printf("\n\n");
