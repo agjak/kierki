@@ -382,7 +382,7 @@ int connect_to_server_ipv4(struct sockaddr_in *server_address)
 
 int connect_to_server_ipv6(struct sockaddr_in6 *server_address)
 {
-    int server_fd = socket(AF_INET6, SOCK_STREAM, 0);
+    int server_fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
     if (server_fd < 0) {
         syserr("cannot create a socket, errno %d", errno);
     }

@@ -11,6 +11,7 @@
 #include <time.h> 
 #include <sys/time.h>
 #include <signal.h>
+#include <arpa/inet.h>
 
 #include "kierki-common.h"
 #include "err.h"
@@ -76,12 +77,8 @@ void get_server_address(char const *host, uint16_t port, bool *is_IPv4, bool *is
     else
     {
         *is_IPv6 = true;
-        server_address_ipv6->sin6_family = address_result->ai_family;   // IP address family
-        for(int i=0; i<16; i++)
-        {
-            server_address_ipv6->sin6_addr.s6_addr[i] =       // IP address
-                ((struct sockaddr_in6 *) (address_result->ai_addr))->sin6_addr.s6_addr[i];
-        }
+        server_address_ipv6->sin6_family = AF_INET6;   // IP address family
+        inet_pton(AF_INET6, host, &server_address_ipv6->sin6_addr);
         
         server_address_ipv6->sin6_port = htons(port); // port from the command line
         freeaddrinfo(address_result);
