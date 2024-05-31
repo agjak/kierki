@@ -36,16 +36,16 @@ int read_timeout(char const *string) {
     return (int) timeout;
 }
 
-struct sockaddr_in get_server_address(char const *host, uint16_t port, bool is_IPv4, bool is_IPv6) {
+void get_server_address(char const *host, uint16_t port, bool *is_IPv4, bool *is_IPv6, struct sockaddr_in *server_address_ipv4, struct sockaddr_in6 *server_address_ipv6) {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(struct addrinfo));
-    if(is_IPv4)
+    if(*is_IPv4)
     {
         hints.ai_family = AF_INET; // IPv4
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_protocol = IPPROTO_TCP;
     }
-    else if(is_IPv6)
+    else if(*is_IPv6)
     {
         hints.ai_family = AF_INET6; // IPv6
         hints.ai_socktype = SOCK_STREAM;
@@ -64,15 +64,31 @@ struct sockaddr_in get_server_address(char const *host, uint16_t port, bool is_I
         fatal("getaddrinfo: %s", gai_strerror(errcode));
     }
 
-    struct sockaddr_in send_address;
-    send_address.sin_family = address_result->ai_family;   // IP address family
-    send_address.sin_addr.s_addr =       // IP address
-            ((struct sockaddr_in *) (address_result->ai_addr))->sin_addr.s_addr;
-    send_address.sin_port = htons(port); // port from the command line
+    if(address_result->ai_family == AF_INET)
+    {
+        *is_IPv4 = true;
+        server_address_ipv4->sin_family = address_result->ai_family;   // IP address family
+        server_address_ipv4->sin_addr.s_addr =       // IP address
+                ((struct sockaddr_in *) (address_result->ai_addr))->sin_addr.s_addr;
+        server_address_ipv4->sin_port = htons(port); // port from the command line
+        freeaddrinfo(address_result);
+    }
+    else
+    {
+        *is_IPv6 = true;
+        server_address_ipv6->sin6_family = address_result->ai_family;   // IP address family
+        for(int i=0; i<16; i++)
+        {
+            server_address_ipv6->sin6_addr.s6_addr[i] =       // IP address
+                ((struct sockaddr_in6 *) (address_result->ai_addr))->sin6_addr.s6_addr[i];
+        }
+        
+        server_address_ipv6->sin6_port = htons(port); // port from the command line
+        freeaddrinfo(address_result);
+    }
+    
 
-    freeaddrinfo(address_result);
-
-    return send_address;
+    
 }
 
 void install_signal_handler(int signal, void (*handler)(int), int flags) {

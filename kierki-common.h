@@ -2,7 +2,7 @@
 
 uint16_t read_port(char const *string);
 int read_timeout(char const *string);
-struct sockaddr_in get_server_address(char const *host, uint16_t port, bool is_IPv4, bool is_IPv6);
+void get_server_address(char const *host, uint16_t port, bool *is_IPv4, bool *is_IPv6, struct sockaddr_in *server_address_ipv4, struct sockaddr_in6 *server_address_ipv6);
 void install_signal_handler(int signal, void (*handler)(int), int flags);
 
 ssize_t readn(int fd, void *vptr, size_t n);

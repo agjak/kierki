@@ -22,7 +22,8 @@
 //TODO: Czy komunikaty od klienta na pewno mają zawierać też całą treść wiadomości? Sprawdź jak zrobił kolega
 
 void load_client_arguments(int argc, char *argv[], uint16_t *port, char const **host, bool *is_IPv4, bool *is_IPv6, bool *is_automatic, char *wanted_place, bool *port_declared);
-int connect_to_server(struct sockaddr_in *server_address);
+int connect_to_server_ipv4(struct sockaddr_in *server_address);
+int connect_to_server_ipv6(struct sockaddr_in6 *server_address);
 int send_IAM(int server_fd, char wanted_place, bool is_automatic);
 int receive_BUSY_or_DEAL(int server_fd, hand *current_hand, bool is_automatic, int *deal_type);
 int print_out_busy_message(char *buffer);
@@ -60,14 +61,38 @@ int main(int argc, char *argv[]) {
 
     load_client_arguments(argc, argv, &port, &host, &is_IPv4, &is_IPv6, &is_automatic, &wanted_place, &port_declared);
 
-    struct sockaddr_in server_address = get_server_address(host, port, is_IPv4, is_IPv6);
+    struct sockaddr_in *server_address_ipv4=malloc(sizeof(struct sockaddr_in));
+    struct sockaddr_in6 *server_address_ipv6=malloc(sizeof(struct sockaddr_in6));
 
-    server_address_and_port = malloc(sizeof(char) * 40);
-    char const *server_ip = inet_ntoa(server_address.sin_addr);
-    uint16_t server_port = ntohs(server_address.sin_port);
-    snprintf(server_address_and_port, 40, "%s:%" PRIu16 , server_ip, server_port);
+    get_server_address(host, port, &is_IPv4, &is_IPv6, server_address_ipv4, server_address_ipv6);
 
-    int server_fd = connect_to_server(&server_address);
+    int server_fd=0;
+
+    if(is_IPv4)
+    {
+        server_address_and_port = malloc(sizeof(char) * 40);
+        char const *server_ip = inet_ntoa(server_address_ipv4->sin_addr);
+        uint16_t server_port = ntohs(server_address_ipv4->sin_port);
+        snprintf(server_address_and_port, 40, "%s:%" PRIu16 , server_ip, server_port);
+        printf("%s\n", server_address_and_port);
+        server_fd = connect_to_server_ipv4(server_address_ipv4);
+    }
+    else if(is_IPv6)
+    {
+        server_address_and_port = malloc(sizeof(char) * 40);
+        char *server_ip = malloc(25*sizeof(char));
+        inet_ntop(AF_INET6, &server_address_ipv6->sin6_addr, server_ip, 25);
+        uint16_t server_port = ntohs(server_address_ipv6->sin6_port);
+        snprintf(server_address_and_port, 40, "%s:%" PRIu16 , server_ip, server_port);
+        free(server_ip);
+        printf("%s\n", server_address_and_port);
+        server_fd = connect_to_server_ipv6(server_address_ipv6);
+    }
+    else
+    {
+        error("Address family is neither ipv4 nor ipv6.");
+    }
+
 
     struct sockaddr_in my_addr;
     socklen_t my_addr_len = sizeof(my_addr);
@@ -341,9 +366,23 @@ void load_client_arguments(int argc, char *argv[], uint16_t *port, char const **
     }
 }
 
-int connect_to_server(struct sockaddr_in *server_address)
+int connect_to_server_ipv4(struct sockaddr_in *server_address)
 {
     int server_fd = socket(server_address->sin_family, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        syserr("cannot create a socket, errno %d", errno);
+    }
+    // Connect to the server.
+    if (connect(server_fd, (struct sockaddr *) server_address,
+                (socklen_t) sizeof(*server_address)) < 0) {
+        syserr("cannot connect to the server, errno %d", errno);
+    }
+    return server_fd;
+}
+
+int connect_to_server_ipv6(struct sockaddr_in6 *server_address)
+{
+    int server_fd = socket(server_address->sin6_family, SOCK_STREAM, 0);
     if (server_fd < 0) {
         syserr("cannot create a socket, errno %d", errno);
     }
